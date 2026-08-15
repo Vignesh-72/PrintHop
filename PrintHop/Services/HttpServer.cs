@@ -14,7 +14,7 @@ namespace PrintHop.Services
 {
     public class HttpServer : IDisposable
     {
-        private readonly HttpListener _listener;
+        private HttpListener _listener;
         private readonly UdpDiscovery _discovery;
         private readonly IPrintService _printService;
         private readonly JavaScriptSerializer _jsonSerializer;
@@ -27,7 +27,6 @@ namespace PrintHop.Services
         public HttpServer(string localId, UdpDiscovery discovery, IPrintService printService, Func<string, string, bool> whitelistCheck)
         {
             _localId = localId;
-            _listener = new HttpListener();
             _discovery = discovery;
             _printService = printService;
             _whitelistCheck = whitelistCheck;
@@ -41,7 +40,7 @@ namespace PrintHop.Services
             {
                 try
                 {
-                    _listener.Prefixes.Clear();
+                    _listener = new HttpListener();
                     _listener.Prefixes.Add(string.Format("http://localhost:{0}/", _port));
                     
                     // Also attempt to bind to the local IP if available, but this might require admin
@@ -59,6 +58,10 @@ namespace PrintHop.Services
                 }
                 catch (HttpListenerException)
                 {
+                    if (_listener != null)
+                    {
+                        try { _listener.Close(); } catch { }
+                    }
                     _port++;
                 }
             }
