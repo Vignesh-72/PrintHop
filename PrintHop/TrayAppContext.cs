@@ -46,7 +46,7 @@ namespace PrintHop
 
             StartServices();
             
-            _trayIcon.ShowBalloonTip(3000, "PrintHop Started", $"Web UI available at http://localhost:{_httpPort}", ToolTipIcon.Info);
+            _trayIcon.ShowBalloonTip(3000, "PrintHop Started", string.Format("Web UI available at http://localhost:{0}", _httpPort), ToolTipIcon.Info);
         }
 
         private void StartServices()
@@ -86,7 +86,7 @@ namespace PrintHop
             
             // Wait for user interaction
             var dr = MessageBox.Show(
-                $"Incoming print job from '{senderHostname}' (ID: {senderId}).\n\nDo you want to accept this and future print jobs from this device?", 
+                string.Format("Incoming print job from '{0}' (ID: {1}).\n\nDo you want to accept this and future print jobs from this device?", senderHostname, senderId), 
                 "PrintHop - New Device", 
                 MessageBoxButtons.YesNo, 
                 MessageBoxIcon.Question, 
@@ -138,7 +138,7 @@ namespace PrintHop
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = $"http://localhost:{_httpPort}",
+                FileName = string.Format("http://localhost:{0}", _httpPort),
                 UseShellExecute = true
             });
         }
@@ -147,8 +147,8 @@ namespace PrintHop
         {
             _trayIcon.Visible = false;
             
-            _httpServer?.Dispose();
-            _udpDiscovery?.Dispose();
+            if (_httpServer != null) _httpServer.Dispose();
+            if (_udpDiscovery != null) _udpDiscovery.Dispose();
             
             Application.Exit();
         }

@@ -131,7 +131,8 @@ namespace PrintHop.Services
                 
                 foreach (var deadId in deadPeers)
                 {
-                    _peers.TryRemove(deadId, out _);
+                    Peer dummy;
+                    _peers.TryRemove(deadId, out dummy);
                 }
 
                 await Task.Delay(5000, token);
@@ -153,8 +154,8 @@ namespace PrintHop.Services
 
         public void Dispose()
         {
-            _cts?.Cancel();
-            _udpClient?.Dispose();
+            if (_cts != null) _cts.Cancel();
+            if (_udpClient != null) _udpClient.Dispose();
         }
     }
 }

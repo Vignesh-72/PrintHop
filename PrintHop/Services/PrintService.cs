@@ -23,7 +23,7 @@ namespace PrintHop.Services
         {
             if (string.IsNullOrEmpty(printerName))
             {
-                throw new ArgumentException("Printer name must be provided.", nameof(printerName));
+                throw new ArgumentException("Printer name must be provided.", "printerName");
             }
 
             if (!File.Exists(filePath))
@@ -48,7 +48,7 @@ namespace PrintHop.Services
             using (var doc = new PrintDocument())
             {
                 doc.PrinterSettings.PrinterName = printerName;
-                doc.PrinterSettings.Copies = (short)(options?.Copies ?? 1);
+                doc.PrinterSettings.Copies = (short)(options != null ? options.Copies : 1);
                 
                 doc.PrintPage += (sender, e) =>
                 {
@@ -84,7 +84,7 @@ namespace PrintHop.Services
                 WindowStyle = ProcessWindowStyle.Hidden,
                 Verb = "printto",
                 // Wrap the printer name in quotes as required by some print handlers
-                Arguments = $"\"{printerName}\""
+                Arguments = string.Format("\"{0}\"", printerName)
             };
 
             using (var process = Process.Start(psi))

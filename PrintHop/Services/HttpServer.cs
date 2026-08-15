@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -41,7 +42,7 @@ namespace PrintHop.Services
                 try
                 {
                     _listener.Prefixes.Clear();
-                    _listener.Prefixes.Add($"http://localhost:{_port}/");
+                    _listener.Prefixes.Add(string.Format("http://localhost:{0}/", _port));
                     
                     // Also attempt to bind to the local IP if available, but this might require admin
                     // If it fails, we fall back to just localhost. 
@@ -50,7 +51,7 @@ namespace PrintHop.Services
                     string localIp = GetLocalIpAddress();
                     if (localIp != "127.0.0.1")
                     {
-                         _listener.Prefixes.Add($"http://{localIp}:{_port}/");
+                         _listener.Prefixes.Add(string.Format("http://{0}:{1}/", localIp, _port));
                     }
                     
                     _listener.Start();
@@ -181,7 +182,7 @@ namespace PrintHop.Services
             string senderId = "";
             string senderHostname = "";
             string printerName = "";
-            string tempFilePath = Path.Combine(Path.GetTempPath(), "PrintHop", $"job_{Guid.NewGuid()}.tmp");
+            string tempFilePath = Path.Combine(Path.GetTempPath(), "PrintHop", string.Format("job_{0}.tmp", Guid.NewGuid()));
             Directory.CreateDirectory(Path.GetDirectoryName(tempFilePath));
 
             // Simplified approach: read headers manually
@@ -267,7 +268,7 @@ namespace PrintHop.Services
 
         private string ExtractFormField(string multipartPayload, string fieldName)
         {
-            var match = Regex.Match(multipartPayload, $@"name=""{fieldName}""\r\n\r\n(.*?)\r\n", RegexOptions.Singleline);
+            var match = Regex.Match(multipartPayload, string.Format("name=\"{0}\"\\r\\n\\r\\n(.*?)\\r\\n", fieldName), RegexOptions.Singleline);
             return match.Success ? match.Groups[1].Value.Trim() : string.Empty;
         }
 
@@ -372,8 +373,11 @@ namespace PrintHop.Services
         public void Dispose()
         {
             _isRunning = false;
-            _listener?.Stop();
-            _listener?.Close();
+            if (_listener != null)
+            {
+                _listener.Stop();
+                _listener.Close();
+            }
         }
     }
 }
