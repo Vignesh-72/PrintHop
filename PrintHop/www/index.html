@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PrintHop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            <span>PrintHop</span>
+        </div>
+        <div class="status-indicator">
+            <span class="dot online"></span>
+            <span id="local-status">Connecting...</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="printer-selection">
+            <h2>Select Printer</h2>
+            <p class="subtitle">Choose a local or network printer to send your document.</p>
+            
+            <div class="printer-list" id="printer-list">
+                <!-- Populated by JS -->
+                <div class="loading">Searching for printers on the network...</div>
+            </div>
+        </section>
+
+        <section class="upload-section">
+            <h2>Upload Document</h2>
+            <div class="drop-zone" id="drop-zone">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="upload-icon">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <p>Drag and drop a file here, or click to browse</p>
+                <span class="supported-formats">Supports PDF, DOCX, XLSX, JPG, PNG</span>
+                <input type="file" id="file-input" class="hidden-input" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.bmp">
+            </div>
+            
+            <div id="selected-file" class="selected-file hidden">
+                <span class="filename" id="filename-display">document.pdf</span>
+                <button class="remove-btn" id="remove-file-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        </section>
+
+        <div class="actions">
+            <button id="print-btn" class="btn primary" disabled>Print Document</button>
+        </div>
+        
+        <div id="toast" class="toast hidden"></div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
