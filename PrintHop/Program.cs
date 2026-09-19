@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -11,6 +12,18 @@ namespace PrintHop
         [STAThread]
         static void Main()
         {
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+            {
+                string msg = DateTime.Now + ": UNHANDLED EXCEPTION: " + (e.ExceptionObject != null ? e.ExceptionObject.ToString() : "null") + "\n";
+                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), msg);
+            };
+
+            Application.ThreadException += (s, e) =>
+            {
+                string msg = DateTime.Now + ": THREAD EXCEPTION: " + (e.Exception != null ? e.Exception.ToString() : "null") + "\n";
+                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), msg);
+            };
+
             const string appName = "Global\\PrintHop_SingleInstance";
             bool createdNew;
 
@@ -29,6 +42,11 @@ namespace PrintHop
             try 
             {
                 Application.Run(new TrayAppContext());
+            }
+            catch (Exception ex)
+            {
+                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), ex.ToString());
+                MessageBox.Show(ex.ToString(), "PrintHop Startup Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {

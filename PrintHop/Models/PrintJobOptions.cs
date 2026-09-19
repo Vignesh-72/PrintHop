@@ -7,10 +7,18 @@ namespace PrintHop.Models
         public PrintJobOptions()
         {
             Copies = 1;
+            PaperSize = "Default";
+            Orientation = "Portrait";
+            Duplex = "Simplex";
+            Color = true;
+            ColorMode = "Color";
         }
-        public string PaperSize { get; set; }
+
         public int Copies { get; set; }
+        public string PaperSize { get; set; }
+        public string Orientation { get; set; }
         public string Duplex { get; set; }
         public bool Color { get; set; }
+        public string ColorMode { get; set; }
     }
 }
