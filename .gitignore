@@ -1,0 +1,22 @@
+# Build artifacts
+bin/
+obj/
+*.exe
+
+# User generated or log files
+*.log
+*.bak
+activity_logs.json
+devices.json
+whitelist.json
+
+# Packaging
+*.zip
+*.rar
+*.7z
+
+# Visual Studio / IDE specific
+.vs/
+.vscode/
+*.user
+*.suo
