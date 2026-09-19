@@ -1,63 +1,141 @@
-# PrintHop
+<div align="center">
+  <img src="www/logo.png" alt="PrintHop Logo" height="120" />
+  <h1>PrintHop</h1>
+  <p><strong>A sleek, modern, and minimalistic mobile-to-PC local network printing system</strong><br/>Designed for seamless printing from any local device without cloud dependencies.</p>
 
-PrintHop is a sleek, modern, and minimalistic application designed to allow local network devices (like mobile phones) to seamlessly send print jobs to a host PC's connected printers. With a built-in HTTP server and a responsive web interface, PrintHop makes mobile printing as easy as scanning a QR code.
+  ![.NET](https://img.shields.io/badge/.NET-C%23-512BD4?logo=dotnet&logoColor=white)
+  ![VanillaJS](https://img.shields.io/badge/Vanilla_JS-ES6-F7DF1E?logo=javascript&logoColor=black)
+  ![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6?logo=windows&logoColor=white)
+  ![License](https://img.shields.io/badge/License-MIT-green)
+  [![GitHub](https://img.shields.io/badge/GitHub-Vignesh--72%2FPrintHop-181717?logo=github)](https://github.com/Vignesh-72/PrintHop)
 
-## Features
+  <br/>
+</div>
 
-- **Responsive Web Interface**: A clean, minimalistic, and modern UI that adapts flawlessly to mobile and desktop screens.
-- **Local Network Printing**: Allows any device on your local network to send print requests to the host PC.
-- **QR Code Connectivity**: Easily connect mobile devices by scanning a dynamically generated QR code directly from the host PC.
-- **System & Network Printer Separation**: Clearly distinguishes between your PC's local system printers and network printers.
-- **Activity & Forensic Logging**: Monitors all print requests and responses in real-time. Gives you the ability to view logs, identify who sent what, and optionally block unwanted devices from printing.
-- **Zero Configuration**: A one-click PowerShell installer ensures everything (including firewall rules) is set up automatically.
+---
 
-## How to Use
+## 📥 Downloads & Releases
 
-1. **Installation**
-   - Download the latest `PrintHop-Release.zip` from the Releases section.
-   - Extract the ZIP file.
-   - Right-click `install.ps1` and select **Run with PowerShell**.
-   - The installer will automatically place the files in `C:\Program Files\PrintHop`, configure Windows Firewall to allow local network traffic on port `4222`, and create a Desktop shortcut.
+Packaged installers and release builds are hosted on GitHub Releases:
 
-2. **Starting the Application**
-   - Double-click the **PrintHop** shortcut on your Desktop.
-   - The application will run in the background (check your system tray) and host the local web server on port `4222`.
+👉 **[Download PrintHop on GitHub](https://github.com/Vignesh-72/PrintHop/releases)**
 
-3. **Connecting a Mobile Device**
-   - Open your web browser on the PC and navigate to `http://localhost:4222`.
-   - Click on the **QR Code icon** to display the connection QR code.
-   - Scan the QR code using your mobile phone's camera to instantly open the PrintHop web interface on your phone.
+---
 
-4. **Printing a File**
-   - On your mobile device, select the file (PDF, Image, etc.) you want to print.
-   - Choose the target printer from the list (local system printers are clearly separated).
-   - Tap **Print**. The file will be securely sent to your PC and processed by the selected printer.
+## 📖 Overview
 
-5. **Monitoring & Logs**
-   - Go to the **Activity Logs** section in the web UI.
-   - Here you can monitor all incoming print requests, verify their status (Success/Failed), and see which device sent them.
+**PrintHop** is a lightweight, zero-configuration local network printing solution. It allows users to send print jobs (such as PDFs or images) from any mobile device or secondary PC directly to the host PC's connected printers — completely offline, over the local Wi-Fi network.
 
-## Developer Notes
+The application is built to be extremely lightweight, utilizing a custom-built HTTP server in C# that serves a responsive, modern web interface. It eliminates the need for complex driver installations on client devices; users simply scan a QR code and print.
 
-### Architecture
+---
 
-PrintHop is built using C# for the backend and pure HTML/CSS/JS for the frontend.
-- **Backend (C#)**: The application utilizes a lightweight, custom `HttpServer.cs` to serve static assets from the `www/` directory and handle API endpoints. The `PrintService.cs` interfaces with the Windows Print Spooler to execute print jobs.
-- **Frontend**: A custom-built, modern UI with responsive CSS grid and flexbox. No heavy frameworks are used; pure Vanilla JS handles state, device detection, and API requests.
+## ✨ Features
 
-### Building from Source
+### 🖨️ Local Network Printing
+- **Seamless execution** — send print requests from any device on your local network to the host PC.
+- **Zero driver installation** — client devices interact via a pure web interface.
 
-1. Clone the repository: `git clone https://github.com/Vignesh-72/PrintHop.git`
-2. Open `PrintHop.sln` in Visual Studio or use the .NET CLI.
-3. Build the project: `dotnet build -c Release`
-4. The frontend assets must be located in the `www/` directory next to the compiled `PrintHop.exe` executable for the web server to serve them correctly.
+### 📱 QR Code Connectivity
+- **Instant access** — easily connect mobile devices by scanning a dynamically generated QR code directly from the host PC's web dashboard.
 
-### Modifying the UI
+### 🔍 Printer Separation & Organization
+- **Smart routing** — clearly distinguishes between the PC's local system printers and dynamically discovered network printers in the UI.
 
-- The primary UI files are located in `www/index.html`, `www/style.css`, and `www/app.js`.
-- Make sure not to introduce any emojis into the UI, per design constraints.
-- The UI dynamically adjusts its layout depending on whether it is viewed on a mobile device or a desktop. 
+### 🛡️ Activity & Forensic Logging
+- **Real-time monitoring** — tracks all incoming print requests and responses in real-time.
+- **Access control** — allows administrators to view logs, identify sending devices (IP/User-Agent), and optionally block unwanted devices from printing.
 
-## License
+### ⚡ Zero Configuration
+- **One-click installation** — a bundled PowerShell installer sets up the application and automatically configures Windows Firewall to allow local network traffic on port `4222`.
 
-This project is licensed under the MIT License.
+---
+
+## 🏗️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | C# (.NET) |
+| Web Server | Custom `HttpServer.cs` |
+| Print Spooler API | Native Windows Printing API |
+| Frontend | HTML5, Vanilla CSS, Vanilla JS |
+| UI Design | Custom Responsive CSS Grid / Flexbox |
+
+---
+
+## 🖥️ System Requirements
+
+| Component | Minimum | Recommended |
+|---|---|---|
+| **OS** | Windows 10 | Windows 10/11 |
+| **CPU** | 1.0 GHz Dual-Core | 1.6 GHz+ |
+| **RAM** | 1 GB | 2 GB |
+| **Network**| Local Wi-Fi / LAN connection | Local Wi-Fi / LAN connection |
+
+---
+
+## 🚀 Development Setup
+
+### Prerequisites
+- **.NET SDK** (for compiling C# source)
+- **Git**
+
+### Install & Run
+
+```bash
+# Clone the repository
+git clone https://github.com/Vignesh-72/PrintHop.git
+cd PrintHop
+
+# Build the executable
+dotnet build -c Release
+
+# Run the server
+# Ensure the compiled PrintHop.exe is placed next to the www/ directory
+./PrintHop.exe
+```
+
+---
+
+## 📂 Project Structure
+
+```
+PrintHop/
+├── PrintHop/
+│   ├── Models/               # Data structures (ActivityLogs, DeviceInfo, etc.)
+│   ├── Services/             # Core logic (HttpServer.cs, PrintService.cs, etc.)
+│   ├── Program.cs            # Entry point
+│   ├── TrayAppContext.cs     # System Tray icon management
+│   └── www/                  # Frontend Web Assets (HTML, CSS, JS, logo)
+├── install.ps1               # Automated installation script
+├── setup_firewall.bat        # Windows Firewall configuration script
+└── README.md
+```
+
+---
+
+## 🧠 Architecture & Performance
+
+### Custom HTTP Server
+Instead of relying on heavy frameworks like ASP.NET, PrintHop implements a lightweight, low-overhead HTTP listener (`HttpServer.cs`). This ensures minimal memory footprint and fast response times on older hardware.
+
+### State & Logging
+- **JSON Persistence** — All configurations, whitelists, and activity logs are persisted locally using simple JSON files (`whitelist.json`, `activity_logs.json`).
+- **In-Memory Caching** — Device connections and print jobs are cached in memory for instantaneous dashboard updates.
+
+### Frontend Optimisation
+- **Zero Dependencies** — The frontend uses 0 external frameworks (No React, No Vue). Everything is written in Vanilla JS for immediate parsing and rendering.
+- **Responsive Design** — The UI relies on native CSS media queries to adapt flawlessly between desktop monitors and mobile screens.
+
+---
+
+## 📜 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](https://github.com/Vignesh-72/PrintHop/blob/main/LICENSE) file for full details.
+
+```
+MIT License — Copyright (c) 2026 Vignesh-72
+https://github.com/Vignesh-72/PrintHop
+```
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of this software, provided the copyright notice and permission notice are included in all copies or substantial portions of the Software.
