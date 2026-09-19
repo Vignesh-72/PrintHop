@@ -5,7 +5,7 @@
 
   ![.NET](https://img.shields.io/badge/.NET-C%23-512BD4?logo=dotnet&logoColor=white)
   ![VanillaJS](https://img.shields.io/badge/Vanilla_JS-ES6-F7DF1E?logo=javascript&logoColor=black)
-  ![Windows](https://img.shields.io/badge/Windows-10%2B-0078D6?logo=windows&logoColor=white)
+  ![Windows](https://img.shields.io/badge/Windows-7%2B-0078D6?logo=windows&logoColor=white)
   ![License](https://img.shields.io/badge/License-MIT-green)
   [![GitHub](https://img.shields.io/badge/GitHub-Vignesh--72%2FPrintHop-181717?logo=github)](https://github.com/Vignesh-72/PrintHop)
 
@@ -51,6 +51,19 @@ The application is built to be extremely lightweight, utilizing a custom-built H
 
 ---
 
+## 🔎 Application Capabilities & Audit
+
+PrintHop has been fully audited to ensure broad compatibility and robust local network performance, specifically engineering support for legacy and low-spec systems:
+
+- **Legacy OS Support (Windows 7+)**: The backend avoids modern, heavy dependencies (like IIS or ASP.NET Core) in favor of a custom, low-level HTTP implementation (`HttpServer.cs`). This ensures it runs gracefully on Windows 7 systems without requiring complex .NET Runtime updates.
+- **Native Print Spooler Integration**: Interfaces directly with the Windows Print Spooler API (`PrintService.cs`), meaning any printer (USB, Network, or Virtual) installed on the host PC is immediately available to PrintHop without additional configuration.
+- **Client Agnostic Frontend**: The web interface strictly uses HTML5, Vanilla CSS, and ES6 JavaScript. It guarantees compatibility across Android, iOS, Linux, and macOS clients, requiring only a modern browser (Chrome, Safari, Firefox).
+- **Device Identity & Trust Management**: Automatically parses incoming requests to extract IP addresses and User-Agent strings. It maintains a persistent state of connected devices (`whitelist.json`), allowing the host administrator to explicitly block or allow printing privileges per device.
+- **Asynchronous Job Handling**: Print jobs and web requests are processed asynchronously to prevent blocking the main thread, ensuring the host PC remains responsive even during high-traffic network printing.
+- **Automated Network Configuration**: The included `setup_firewall.bat` utilizes standard Windows commands (`netsh`) to automatically punch holes for TCP Port 4222 in both modern Windows Defender and legacy Windows Firewall, ensuring immediate local network visibility.
+
+---
+
 ## 🏗️ Tech Stack
 
 | Layer | Technology |
@@ -67,7 +80,7 @@ The application is built to be extremely lightweight, utilizing a custom-built H
 
 | Component | Minimum | Recommended |
 |---|---|---|
-| **OS** | Windows 10 | Windows 10/11 |
+| **OS** | Windows 7 | Windows 10/11 |
 | **CPU** | 1.0 GHz Dual-Core | 1.6 GHz+ |
 | **RAM** | 1 GB | 2 GB |
 | **Network**| Local Wi-Fi / LAN connection | Local Wi-Fi / LAN connection |
