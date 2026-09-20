@@ -15,7 +15,7 @@ DefaultGroupName=PrintHop
 
 ; Installer Output settings
 OutputDir=.\Installer
-OutputBaseFilename=PrintHop_Setup_Official
+OutputBaseFilename=PrintHop-win64-setup-official
 SetupIconFile=PrintHop\app.ico
 Compression=lzma
 SolidCompression=yes
