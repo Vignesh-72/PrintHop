@@ -79,4 +79,4 @@ Please ensure that any pull requests adhere strictly to the **2GB memory constra
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](https://github.com/Vignesh-72/PrintHop/blob/main/LICENSE.txt).
