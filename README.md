@@ -1,5 +1,7 @@
 <div align="center">
-  <img src="https://via.placeholder.com/150/0f172a/ffffff?text=PrintHop" alt="PrintHop Logo" width="150" height="150">
+  
+  <img width="192" height="192" alt="logo_transparent_192x192" src="https://github.com/user-attachments/assets/024a5b5c-1f6b-423f-a3d0-8aacd8ecd56f" />
+
   
   <h1>PrintHop</h1>
   <p><b>Driverless, Zero-Cloud Printer-Sharing for Windows LANs</b></p>
@@ -25,10 +27,6 @@ If your device is on the network, you can print.
 - ⚡ **Optimized for Low-End Hardware**: Rigorously engineered to run on old Windows 7 machines with limited resources. Uploads are streamed directly to disk to prevent RAM spikes, and a sophisticated zero-CPU polling queue ensures smooth operation without locking up the host machine.
 - 🛡️ **Access Control & Auditing**: Features real-time queue monitoring, manual job blocking, and a comprehensive audit stream of every print job and connected device.
 - 📡 **Smart Auto-Discovery**: Automatic UDP broadcast detection allows PrintHop instances to instantly find each other on the LAN, automatically adapting to the correct network adapter.
-
-## 📸 Screenshots
-
-*(Replace with actual screenshots of the application)*
 
 <p align="center">
   <img src="https://via.placeholder.com/600x350/f8fafc/0f172a?text=Print+Queue+Interface" alt="Print Queue Interface">
