@@ -606,6 +606,8 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedFile = null;
         fileInput.value = '';
         selectedFileContainer.classList.add('hidden');
+        const progressBox = document.getElementById('upload-progress-container');
+        if (progressBox) progressBox.classList.add('hidden');
         dropZone.style.display = 'flex';
         updatePrintButton();
     });
@@ -659,37 +661,69 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? `/api/receive-print`
                 : `http://${targetPeer.ip || targetPeer.Ip}:${targetPeer.httpPort || targetPeer.HttpPort || 4222}/api/receive-print`;
 
-            const res = await fetch(targetUrl, {
-                method: 'POST',
-                headers: headers,
-                body: selectedFile
-            });
+            const progressBox = document.getElementById('upload-progress-container');
+            const progressBar = document.getElementById('upload-progress-bar');
+            const progressText = document.getElementById('upload-progress-text');
 
-            if (res.ok) {
-                try {
-                    const data = await res.json();
-                    if (data && data.success && data.jobId) {
-                        // Register this job locally so we accept webhooks for it
-                        await fetch('/api/jobs/track', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ jobId: data.jobId })
-                        });
-                    }
-                } catch (e) {
-                    // Fallback if not json
-                }
-                showToast('Print job dispatched successfully', 'success');
-                removeFileBtn.click();
-                fetchActivityLogs();
-                fetchDevices();
-            } else {
-                const text = await res.text();
-                showToast(`Print failed: ${text}`, 'error');
+            if (progressBox) progressBox.classList.remove('hidden');
+            if (progressBar) progressBar.style.width = '0%';
+            if (progressText) progressText.textContent = 'Uploading... 0%';
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', targetUrl, true);
+            
+            // Set headers
+            for (const [key, value] of Object.entries(headers)) {
+                xhr.setRequestHeader(key, value);
             }
-        } catch {
-            showToast('Network error while dispatching print job', 'error');
-        } finally {
+
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = Math.round((e.loaded / e.total) * 100);
+                    if (progressBar) progressBar.style.width = percentComplete + '%';
+                    if (progressText) progressText.textContent = `Uploading... ${percentComplete}%`;
+                }
+            };
+
+            xhr.onload = async () => {
+                if (progressBox) progressBox.classList.add('hidden');
+                
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        if (data && data.success && data.jobId) {
+                            // Register this job locally so we accept webhooks for it
+                            await fetch('/api/jobs/track', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ jobId: data.jobId })
+                            });
+                        }
+                    } catch (e) {
+                        // Fallback if not json
+                    }
+                    showToast('Print job dispatched successfully', 'success');
+                    removeFileBtn.click();
+                    fetchActivityLogs();
+                    fetchDevices();
+                } else {
+                    showToast(`Print failed: ${xhr.responseText}`, 'error');
+                }
+                printBtn.textContent = 'Print Document';
+                updatePrintButton();
+            };
+
+            xhr.onerror = () => {
+                if (progressBox) progressBox.classList.add('hidden');
+                showToast('Network error while dispatching print job', 'error');
+                printBtn.textContent = 'Print Document';
+                updatePrintButton();
+            };
+
+            xhr.send(selectedFile);
+
+        } catch (e) {
+            showToast('Error preparing print job', 'error');
             printBtn.textContent = 'Print Document';
             updatePrintButton();
         }
@@ -698,11 +732,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================================================================
     // Activity & Device Management Logic (Zero Emojis)
     // =========================================================================
+    let lastSeenLogDate = null;
+    let initialLoad = true;
+
     async function fetchActivityLogs() {
         try {
             const res = await fetch('/api/activity-logs?limit=50');
             if (!res.ok) return;
-            activityLogs = await res.json();
+            const newLogs = await res.json();
+
+            if (!initialLoad && newLogs && newLogs.length > 0) {
+                for (const log of newLogs) {
+                    const logDate = parseNetDate(log.Timestamp).getTime();
+                    if (lastSeenLogDate !== null && logDate > lastSeenLogDate) {
+                        // Check if this is a remote report
+                        if (log.IsLocal && log.PrinterName === "Remote Printer" && log.Message && log.Message.indexOf("Remote report:") >= 0) {
+                            const doc = log.DocumentName ? log.DocumentName.replace("Dispatched Job ", "") : "Document";
+                            if (log.Status === "Success") {
+                                showToast(`Remote Print Success: ${doc}`, 'success');
+                            } else {
+                                showToast(`Remote Print Failed: ${doc}`, 'error');
+                            }
+                        }
+                    }
+                }
+            }
+
+            activityLogs = newLogs;
+            if (activityLogs && activityLogs.length > 0) {
+                lastSeenLogDate = parseNetDate(activityLogs[0].Timestamp).getTime();
+            }
+            initialLoad = false;
+            
             renderActivityLogs();
             updateStats();
         } catch (e) {
@@ -722,33 +783,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    let printQueue = [];
+
     async function fetchPrintQueue() {
         try {
             const res = await fetch('/api/jobs');
             if (!res.ok) return;
-            const queue = await res.json();
-            renderPrintQueue(queue);
+            printQueue = await res.json();
+            renderPrintQueue();
         } catch (e) {
             console.error('Failed to fetch print queue:', e);
         }
     }
 
-    function renderPrintQueue(queue) {
+    function renderPrintQueue() {
         const queueList = document.getElementById('print-queue-list');
+        const searchInput = document.getElementById('search-queue-input');
         if (!queueList) return;
 
+        let filteredQueue = printQueue;
+        if (searchInput && searchInput.value.trim() !== '') {
+            const query = searchInput.value.trim().toLowerCase();
+            filteredQueue = printQueue.filter(j => 
+                (j.DocumentName || '').toLowerCase().includes(query) ||
+                (j.SenderHostname || '').toLowerCase().includes(query) ||
+                (j.PrinterName || '').toLowerCase().includes(query)
+            );
+        }
+
         queueList.innerHTML = '';
-        if (!queue || queue.length === 0) {
-            queueList.innerHTML = '<div class="empty-notice">No print jobs currently in the queue.</div>';
+        if (!filteredQueue || filteredQueue.length === 0) {
+            queueList.innerHTML = '<div class="empty-notice">No print jobs found.</div>';
             return;
         }
 
-        queue.forEach(job => {
+        filteredQueue.forEach(job => {
             const el = document.createElement('div');
             el.className = 'activity-item';
 
             const statusClass = job.Status === 'Printing' ? 'status-success' : 'status-unknown';
-            const blockBtnHtml = job.Status === 'Queued' ? `<button class="btn-danger-ghost block-job-btn" style="margin-left:auto; padding:4px 8px; font-size:12px;" data-id="${job.Id}">Block</button>` : `<span style="margin-left:auto; font-size:12px; color:var(--text-secondary);">${job.Status}</span>`;
+            
+            let actionBtnHtml = `<span style="margin-left:auto; font-size:12px; color:var(--text-secondary);">${job.Status}</span>`;
+            if (job.Status === 'Queued') {
+                actionBtnHtml = `<button class="btn-danger-ghost block-job-btn" style="margin-left:auto; padding:4px 8px; font-size:12px;" data-id="${job.Id}">Block</button>`;
+            } else if (job.Status === 'Printing') {
+                actionBtnHtml = `<button class="btn-danger-solid cancel-job-btn" style="margin-left:auto; padding:4px 8px; font-size:12px;" data-id="${job.Id}">Cancel</button>`;
+            }
             
             // Format time correctly from C# datetime serialization
             let timeStr = 'Unknown time';
@@ -779,7 +859,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
                 <div class="activity-actions">
-                    ${blockBtnHtml}
+                    ${actionBtnHtml}
                 </div>
             `;
             queueList.appendChild(el);
@@ -800,6 +880,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     } catch {
                         showToast('Network error while blocking job', 'error');
+                    }
+                }
+            });
+        });
+
+        document.querySelectorAll('.cancel-job-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const id = e.target.getAttribute('data-id');
+                if (confirm('Are you sure you want to cancel this currently printing job?')) {
+                    try {
+                        const res = await fetch('/api/jobs/cancel?id=' + encodeURIComponent(id), { method: 'POST' });
+                        if (res.ok) {
+                            showToast('Job cancelled successfully', 'success');
+                            fetchPrintQueue();
+                        } else {
+                            const data = await res.json();
+                            showToast(data.message || 'Failed to cancel job', 'error');
+                        }
+                    } catch {
+                        showToast('Network error while cancelling job', 'error');
                     }
                 }
             });
@@ -850,6 +950,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!activityLogList) return;
 
         let filtered = activityLogs;
+        
+        // Apply status filter
         if (activeLogFilter === 'Success') {
             filtered = activityLogs.filter(l => l.Status === 'Success');
         } else if (activeLogFilter === 'Blocked') {
@@ -858,8 +960,20 @@ document.addEventListener('DOMContentLoaded', () => {
             filtered = activityLogs.filter(l => l.Status === 'Failed' || l.Status === 'Rejected');
         }
 
+        // Apply text search filter
+        const searchInput = document.getElementById('search-logs-input');
+        if (searchInput && searchInput.value.trim() !== '') {
+            const query = searchInput.value.trim().toLowerCase();
+            filtered = filtered.filter(l => 
+                (l.DocumentName || '').toLowerCase().includes(query) ||
+                (l.Status || '').toLowerCase().includes(query) ||
+                (l.SenderHostname || '').toLowerCase().includes(query) ||
+                (l.Message || '').toLowerCase().includes(query)
+            );
+        }
+
         if (!filtered || filtered.length === 0) {
-            activityLogList.innerHTML = `<div class="empty-notice">No print audit logs recorded.</div>`;
+            activityLogList.innerHTML = `<div class="empty-notice">No print audit logs found.</div>`;
             return;
         }
 
@@ -1135,6 +1249,21 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             toast.classList.remove('show');
         }, 3000);
+    }
+
+    // Search Listeners
+    const searchQueueInput = document.getElementById('search-queue-input');
+    if (searchQueueInput) {
+        searchQueueInput.addEventListener('input', () => {
+            renderPrintQueue();
+        });
+    }
+
+    const searchLogsInput = document.getElementById('search-logs-input');
+    if (searchLogsInput) {
+        searchLogsInput.addEventListener('input', () => {
+            renderActivityLogs();
+        });
     }
 
     // Start App

@@ -155,6 +155,15 @@
                         </svg>
                     </button>
                 </div>
+
+                <div id="upload-progress-container" class="upload-progress-box hidden">
+                    <div class="progress-info">
+                        <span id="upload-progress-text">Uploading... 0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="upload-progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
             </section>
 
             <!-- Section 3: Print Options -->
@@ -340,6 +349,14 @@
                     </div>
                 </div>
 
+                <div class="search-bar-container">
+                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="search-queue-input" class="search-input" placeholder="Search jobs by document, sender, or printer...">
+                </div>
+
                 <div id="print-queue-list" class="activity-feed">
                     <div class="empty-notice">Loading queue...</div>
                 </div>
@@ -358,6 +375,14 @@
                         <button class="filter-tab" data-filter="Blocked">Blocked</button>
                         <button class="filter-tab" data-filter="Failed">Failed</button>
                     </div>
+                </div>
+
+                <div class="search-bar-container">
+                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="search-logs-input" class="search-input" placeholder="Search logs by document, status, or sender...">
                 </div>
 
                 <div id="activity-log-list" class="activity-feed">

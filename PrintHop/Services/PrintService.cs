@@ -65,7 +65,7 @@ namespace PrintHop.Services
             return caps;
         }
 
-        public void PrintFile(string filePath, string printerName, Models.PrintJobOptions options)
+        public Process PrintFile(string filePath, string printerName, Models.PrintJobOptions options)
         {
             if (string.IsNullOrEmpty(printerName))
             {
@@ -82,10 +82,11 @@ namespace PrintHop.Services
             if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".gif")
             {
                 PrintImage(filePath, printerName, options);
+                return null;
             }
             else
             {
-                PrintGenericDocument(filePath, printerName, options);
+                return PrintGenericDocument(filePath, printerName, options);
             }
         }
 
@@ -198,7 +199,7 @@ namespace PrintHop.Services
             }
         }
 
-        private void PrintGenericDocument(string filePath, string printerName, Models.PrintJobOptions options)
+        private Process PrintGenericDocument(string filePath, string printerName, Models.PrintJobOptions options)
         {
             // If the target is a virtual PDF printer, route directly to Output folder to avoid blocking SaveFileDialog
             if (printerName.IndexOf("PDF", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -207,41 +208,36 @@ namespace PrintHop.Services
                 Directory.CreateDirectory(pdfDir);
                 string dest = Path.Combine(pdfDir, string.Format("print_{0:yyyyMMdd_HHmmss}_{1}.pdf", DateTime.Now, Guid.NewGuid().ToString().Substring(0, 8)));
                 File.Copy(filePath, dest, true);
-                return;
+                return null;
             }
-
-            // For physical printers, use ShellExecute with "printto" verb
-            // Note: This requires the host machine to have a default application registered 
-            // to handle the "printto" verb for the specific file extension.
 
             // BUG FIX #7: Sanitize printerName to prevent argument injection.
             string safePrinterName = printerName.Replace("\"", "");
             int copies = (options != null && options.Copies > 0) ? options.Copies : 1;
 
-            // Spool the requested number of copies to the physical printer
-            for (int i = 0; i < copies; i++)
+            // Attempt to set printer copies globally for this process
+            try
             {
-                var psi = new ProcessStartInfo
+                var settings = new PrinterSettings { PrinterName = safePrinterName };
+                if (settings.IsValid)
                 {
-                    FileName = filePath,
-                    UseShellExecute = true,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    Verb = "printto",
-                    // Wrap the sanitized printer name in quotes as required by some print handlers
-                    Arguments = string.Format("\"{0}\"", safePrinterName)
-                };
-
-                using (var process = Process.Start(psi))
-                {
-                    // Process might be null if it reused an existing application instance
-                    if (process != null)
-                    {
-                        // Wait a maximum of 30 seconds for the application to spool the print job
-                        process.WaitForExit(30000);
-                    }
+                    settings.Copies = (short)copies;
                 }
             }
+            catch { }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = filePath,
+                UseShellExecute = true,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                Verb = "printto",
+                // Wrap the sanitized printer name in quotes as required by some print handlers
+                Arguments = string.Format("\"{0}\"", safePrinterName)
+            };
+
+            return Process.Start(psi);
         }
     }
 }

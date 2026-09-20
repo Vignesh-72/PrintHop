@@ -411,6 +411,39 @@ namespace PrintHop.Services
                     SendJson(res, new { success = false, message = "Job not found or already processing." });
                 }
             }
+            else if (req.HttpMethod == "POST" && path == "/api/jobs/cancel")
+            {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
+                string id = req.QueryString["id"];
+                if (string.IsNullOrEmpty(id))
+                {
+                    res.StatusCode = 400;
+                    SendString(res, "Missing 'id' query parameter.");
+                    return;
+                }
+                
+                bool cancelled = false;
+                if (_printJobManager != null)
+                {
+                    // BlockJob handles "Queued" and "Printing" states now
+                    cancelled = _printJobManager.BlockJob(id);
+                }
+
+                if (cancelled)
+                {
+                    SendJson(res, new { success = true, message = "Job cancelled successfully." });
+                }
+                else
+                {
+                    res.StatusCode = 404;
+                    SendJson(res, new { success = false, message = "Job not found or already completed." });
+                }
+            }
             else if (req.HttpMethod == "POST" && path == "/api/jobs/track")
             {
                 if (!req.IsLocal)

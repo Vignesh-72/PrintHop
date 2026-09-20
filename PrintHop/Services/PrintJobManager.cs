@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +15,12 @@ namespace PrintHop.Services
         private readonly IPrintService _printService;
         private readonly ActivityMonitorService _activityMonitor;
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        private readonly SemaphoreSlim _jobSignal = new SemaphoreSlim(0);
         private readonly Task _workerTask;
+        
+        private Process _currentPrintProcess;
+        private string _currentPrintJobId;
+        private volatile bool _cancelCurrentJob;
 
         public PrintJobManager(IPrintService printService, ActivityMonitorService activityMonitor)
         {
@@ -30,6 +36,7 @@ namespace PrintHop.Services
                 job.Status = "Queued";
                 _jobs.Add(job);
             }
+            _jobSignal.Release();
         }
 
         public IEnumerable<PrintJob> GetJobs()
@@ -76,6 +83,32 @@ namespace PrintHop.Services
                     SendWebhook(job, "Blocked", "Print job was blocked by the host.");
                     return true;
                 }
+                else if (job != null && job.Status == "Printing")
+                {
+                    CancelCurrentJob(jobId);
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        public bool CancelCurrentJob(string jobId)
+        {
+            lock (_lock)
+            {
+                if (_currentPrintJobId == jobId)
+                {
+                    _cancelCurrentJob = true;
+                    try
+                    {
+                        if (_currentPrintProcess != null && !_currentPrintProcess.HasExited)
+                        {
+                            _currentPrintProcess.Kill();
+                        }
+                    }
+                    catch { }
+                    return true;
+                }
                 return false;
             }
         }
@@ -99,7 +132,43 @@ namespace PrintHop.Services
                 {
                     try
                     {
-                        _printService.PrintFile(nextJob.TempFilePath, nextJob.PrinterName, nextJob.Options);
+                        lock (_lock)
+                        {
+                            _currentPrintJobId = nextJob.Id;
+                            _cancelCurrentJob = false;
+                        }
+
+                        var process = _printService.PrintFile(nextJob.TempFilePath, nextJob.PrinterName, nextJob.Options);
+                        
+                        if (process != null)
+                        {
+                            lock (_lock)
+                            {
+                                _currentPrintProcess = process;
+                            }
+
+                            // Wait up to 30 seconds for the application to spool the print job
+                            bool exited = false;
+                            for (int i = 0; i < 300; i++) // 30 seconds (100ms intervals)
+                            {
+                                if (_cancelCurrentJob || token.IsCancellationRequested) break;
+                                if (process.WaitForExit(100))
+                                {
+                                    exited = true;
+                                    break;
+                                }
+                            }
+
+                            if (_cancelCurrentJob)
+                            {
+                                throw new Exception("Print job was cancelled by the user.");
+                            }
+                            if (!exited)
+                            {
+                                try { if (!process.HasExited) process.Kill(); } catch { }
+                                throw new TimeoutException("Print application timed out after 30 seconds and was terminated.");
+                            }
+                        }
 
                         if (_activityMonitor != null)
                         {
@@ -140,6 +209,9 @@ namespace PrintHop.Services
                         lock (_lock)
                         {
                             _jobs.Remove(nextJob);
+                            _currentPrintProcess = null;
+                            _currentPrintJobId = null;
+                            _cancelCurrentJob = false;
                         }
 
                         try
@@ -154,7 +226,7 @@ namespace PrintHop.Services
                 }
                 else
                 {
-                    await Task.Delay(1000, token).ConfigureAwait(false);
+                    await _jobSignal.WaitAsync(5000, token).ConfigureAwait(false);
                 }
             }
         }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace PrintHop.Services
 {
@@ -6,6 +7,6 @@ namespace PrintHop.Services
     {
         IEnumerable<string> GetPrinters();
         Models.PrinterCapabilities GetPrinterCapabilities(string printerName);
-        void PrintFile(string filePath, string printerName, Models.PrintJobOptions options);
+        Process PrintFile(string filePath, string printerName, Models.PrintJobOptions options);
     }
 }

@@ -14,7 +14,7 @@ namespace PrintHop.Services
 {
     public class UdpDiscovery : IDisposable
     {
-        private const int Port = 4223;
+        private const int Port = 4222;
         private UdpClient _udpClient;
         private CancellationTokenSource _cts;
         private readonly ConcurrentDictionary<string, Peer> _peers = new ConcurrentDictionary<string, Peer>();
@@ -145,13 +145,69 @@ namespace PrintHop.Services
 
         private string GetLocalIpAddress()
         {
-            var host = Dns.GetHostEntry(Dns.GetHostName());
-            foreach (var ip in host.AddressList)
+            var ips = new List<string>();
+            try
             {
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces();
+                foreach (var iface in interfaces)
                 {
-                    return ip.ToString();
+                    if (iface.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                        iface.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                    {
+                        var props = iface.GetIPProperties();
+                        foreach (var addr in props.UnicastAddresses)
+                        {
+                            if (addr.Address.AddressFamily == AddressFamily.InterNetwork)
+                            {
+                                string ipStr = addr.Address.ToString();
+                                if (!ipStr.StartsWith("127.") && !ips.Contains(ipStr))
+                                {
+                                    ips.Add(ipStr);
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+            catch { }
+
+            try
+            {
+                var host = Dns.GetHostEntry(Dns.GetHostName());
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        string ipStr = ip.ToString();
+                        if (!ipStr.StartsWith("127.") && !ips.Contains(ipStr))
+                        {
+                            ips.Add(ipStr);
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            if (ips.Count > 0)
+            {
+                // Prefer RFC 1918 Private LAN / Hotspot subnets (10.x, 192.168.x, 172.16.x - 172.31.x)
+                foreach (var ip in ips)
+                {
+                    if (ip.StartsWith("10.") || ip.StartsWith("192.168."))
+                    {
+                        return ip;
+                    }
+                    if (ip.StartsWith("172."))
+                    {
+                        var parts = ip.Split('.');
+                        int secondOctet;
+                        if (parts.Length >= 2 && int.TryParse(parts[1], out secondOctet) && secondOctet >= 16 && secondOctet <= 31)
+                        {
+                            return ip;
+                        }
+                    }
+                }
+                return ips[0];
             }
             return "127.0.0.1";
         }

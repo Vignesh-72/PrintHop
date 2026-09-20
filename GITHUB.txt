@@ -1,0 +1,17 @@
+Thank you for installing PrintHop!
+
+==================================================
+OFFICIAL GITHUB REPOSITORY
+==================================================
+
+You can find the official open-source repository for PrintHop here:
+https://github.com/Vignesh-72/PrintHop
+
+Please visit the repository to:
+- Download the latest updates
+- View the source code
+- Report any issues or bugs
+- Contribute to the project
+
+==================================================
+Click "Next" to continue the installation.

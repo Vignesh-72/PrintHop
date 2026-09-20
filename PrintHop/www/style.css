@@ -169,6 +169,9 @@ body {
 .primary-nav {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 59px; /* Just below header */
+    z-index: 99;
 }
 
 .nav-wrapper {
@@ -1464,4 +1467,128 @@ h3 {
     body {
         padding-bottom: env(safe-area-inset-bottom);
     }
+}
+
+/* Progress Bar */
+.upload-progress-box {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.upload-progress-box.hidden {
+    display: none;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.progress-track {
+    width: 100%;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary);
+    width: 0%;
+    transition: width 0.2s ease;
+}
+
+/* ==========================================================================
+   Mobile Bottom Navigation Bar
+   ========================================================================== */
+@media (max-width: 640px) {
+    .primary-nav {
+        position: fixed;
+        bottom: 0;
+        top: auto;
+        left: 0;
+        right: 0;
+        border-bottom: none;
+        border-top: 1px solid var(--border);
+        background: var(--surface);
+        padding-bottom: env(safe-area-inset-bottom);
+        z-index: 999;
+        box-shadow: 0 -4px 15px rgba(0,0,0,0.03);
+    }
+
+    .nav-wrapper {
+        justify-content: space-around;
+        padding: 0.25rem 0;
+        gap: 0;
+    }
+
+    .nav-item {
+        flex-direction: column;
+        gap: 0.25rem;
+        font-size: 0.75rem;
+        padding: 0.5rem 0.25rem;
+        border-bottom: none;
+        border-top: 2px solid transparent;
+        flex: 1;
+        justify-content: center;
+        border-radius: 0;
+    }
+
+    .nav-item.active {
+        border-bottom-color: transparent;
+        border-top-color: var(--primary);
+    }
+    
+    .nav-count {
+        position: absolute;
+        top: 0.2rem;
+        right: 25%;
+    }
+    
+    .page-container {
+        margin-bottom: 5rem; /* Make room for bottom nav */
+    }
+}
+
+/* ==========================================================================
+   Search Bars
+   ========================================================================== */
+.search-bar-container {
+    position: relative;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.search-input {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    font-size: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    transition: var(--transition);
+    outline: none;
+}
+
+.search-input:focus {
+    border-color: var(--accent);
+    background-color: var(--surface);
+    box-shadow: 0 0 0 2px var(--accent-soft);
 }

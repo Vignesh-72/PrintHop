@@ -32,10 +32,18 @@ namespace PrintHop
             _whitelist = LoadWhitelist();
             _activityMonitor = new ActivityMonitorService();
 
+            // Try to load the custom application icon, fallback to system icon if it fails
+            Icon appIcon = SystemIcons.Application;
+            try
+            {
+                appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
+            }
+            catch { }
+
             // Initialize tray icon
             _trayIcon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = appIcon,
                 ContextMenu = new ContextMenu(new[]
                 {
                     new MenuItem("Open Web UI", OpenWebUI),

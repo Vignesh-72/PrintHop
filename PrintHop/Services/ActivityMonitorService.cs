@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Web.Script.Serialization;
 using PrintHop.Models;
 
@@ -21,6 +22,10 @@ namespace PrintHop.Services
 
         private const int MaxLogHistory = 100;
 
+        private Timer _flushTimer;
+        private volatile bool _logsDirty = false;
+        private volatile bool _devicesDirty = false;
+
         public ActivityMonitorService()
         {
             _serializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
@@ -31,6 +36,35 @@ namespace PrintHop.Services
 
             LoadDevices();
             LoadLogs();
+
+            _flushTimer = new Timer(FlushDirtyData, null, 3000, 3000);
+        }
+
+        private void FlushDirtyData(object state)
+        {
+            if (_logsDirty)
+            {
+                lock (_lock)
+                {
+                    if (_logsDirty)
+                    {
+                        SaveLogsInternal();
+                        _logsDirty = false;
+                    }
+                }
+            }
+
+            if (_devicesDirty)
+            {
+                lock (_lock)
+                {
+                    if (_devicesDirty)
+                    {
+                        SaveDevicesInternal();
+                        _devicesDirty = false;
+                    }
+                }
+            }
         }
 
         public void TrackDispatchedJob(string jobId)
@@ -89,8 +123,8 @@ namespace PrintHop.Services
                     }
                 }
 
-                SaveLogs();
-                SaveDevices();
+                _logsDirty = true;
+                _devicesDirty = true;
             }
         }
 
@@ -107,7 +141,8 @@ namespace PrintHop.Services
             lock (_lock)
             {
                 _logs.Clear();
-                SaveLogs();
+                SaveLogsInternal();
+                _logsDirty = false;
             }
         }
 
@@ -170,7 +205,8 @@ namespace PrintHop.Services
                     dev.Hostname = hostname;
                 }
 
-                SaveDevices();
+                SaveDevicesInternal();
+                _devicesDirty = false;
             }
         }
 
@@ -195,7 +231,8 @@ namespace PrintHop.Services
                     dev.Hostname = hostname;
                 }
 
-                SaveDevices();
+                SaveDevicesInternal();
+                _devicesDirty = false;
             }
         }
 
@@ -209,7 +246,8 @@ namespace PrintHop.Services
                 if (_devices.TryGetValue(deviceId, out dev))
                 {
                     dev.IsBlocked = false;
-                    SaveDevices();
+                    SaveDevicesInternal();
+                    _devicesDirty = false;
                 }
             }
         }
@@ -224,7 +262,8 @@ namespace PrintHop.Services
                 if (_devices.TryGetValue(deviceId, out dev))
                 {
                     dev.IsApproved = false;
-                    SaveDevices();
+                    SaveDevicesInternal();
+                    _devicesDirty = false;
                 }
             }
         }
@@ -254,7 +293,7 @@ namespace PrintHop.Services
                     }
                 }
 
-                SaveDevices();
+                _devicesDirty = true;
             }
         }
 
@@ -305,6 +344,11 @@ namespace PrintHop.Services
 
         private void SaveDevices()
         {
+            _devicesDirty = true;
+        }
+
+        private void SaveDevicesInternal()
+        {
             try
             {
                 var list = _devices.Values.ToList();
@@ -340,6 +384,11 @@ namespace PrintHop.Services
         }
 
         private void SaveLogs()
+        {
+            _logsDirty = true;
+        }
+
+        private void SaveLogsInternal()
         {
             try
             {

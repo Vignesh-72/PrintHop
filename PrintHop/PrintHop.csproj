@@ -6,7 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>
-    <ApplicationIcon/>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- Ensure portable build -->
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
