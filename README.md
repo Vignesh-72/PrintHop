@@ -41,7 +41,7 @@ There is **no native mobile app** to install. Mobile users (iOS/Android) access 
 ## 🚀 Installation & Usage
 
 ### 1. Download
-Grab the latest `PrintHop.exe` from the [Releases](#) page.
+Grab the latest `PrintHop.exe` from the [Releases](https://github.com/Vignesh-72/PrintHop/releases/tag/v1.0.0) page.
 
 ### 2. Initial Setup
 Run the executable as **Administrator** for the very first launch. PrintHop uses Windows `netsh` to automatically configure Windows Firewall exceptions for port `4222` (TCP/UDP) so peers can connect. You will be prompted for UAC elevation. *(Subsequent launches do not require Admin rights).*
