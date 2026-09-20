@@ -20,5 +20,6 @@ namespace PrintHop.Models
         public string Duplex { get; set; }
         public bool Color { get; set; }
         public string ColorMode { get; set; }
+        public string PageRange { get; set; }
     }
 }

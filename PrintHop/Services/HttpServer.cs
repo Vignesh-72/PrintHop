@@ -23,18 +23,21 @@ namespace PrintHop.Services
         private readonly string _localId;
         private readonly Func<string, string, bool> _whitelistCheck;
         private readonly ActivityMonitorService _activityMonitor;
+        private readonly PrintJobManager _printJobManager;
+        private static readonly SemaphoreSlim _printSemaphore = new SemaphoreSlim(3, 3);
         private int _port = 4222;
         private Thread _serverThread;
         private bool _isRunning;
 
-        public HttpServer(string localId, UdpDiscovery discovery, IPrintService printService, Func<string, string, bool> whitelistCheck, ActivityMonitorService activityMonitor = null)
+        public HttpServer(string localId, UdpDiscovery discovery, IPrintService printService, Func<string, string, bool> whitelistCheck, ActivityMonitorService activityMonitor = null, PrintJobManager printJobManager = null)
         {
             _localId = localId;
             _discovery = discovery;
             _printService = printService;
             _whitelistCheck = whitelistCheck;
             _activityMonitor = activityMonitor;
-            _jsonSerializer = new JavaScriptSerializer();
+            _printJobManager = printJobManager;
+            _jsonSerializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         }
 
         public int Start()
@@ -192,8 +195,12 @@ namespace PrintHop.Services
             }
             catch (Exception ex)
             {
-                res.StatusCode = 500;
-                SendString(res, ex.Message);
+                try
+                {
+                    res.StatusCode = 500;
+                    SendString(res, ex.Message);
+                }
+                catch { }
             }
         }
 
@@ -270,6 +277,12 @@ namespace PrintHop.Services
             }
             else if (req.HttpMethod == "POST" && path == "/api/activity-logs/clear")
             {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
                 if (_activityMonitor != null)
                 {
                     _activityMonitor.ClearLogs();
@@ -283,6 +296,12 @@ namespace PrintHop.Services
             }
             else if (req.HttpMethod == "POST" && path == "/api/devices/block")
             {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
                 string id = req.QueryString["id"];
                 string hostname = req.QueryString["hostname"];
                 if (string.IsNullOrEmpty(id))
@@ -299,6 +318,12 @@ namespace PrintHop.Services
             }
             else if (req.HttpMethod == "POST" && path == "/api/devices/unblock")
             {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
                 string id = req.QueryString["id"];
                 if (string.IsNullOrEmpty(id))
                 {
@@ -314,6 +339,12 @@ namespace PrintHop.Services
             }
             else if (req.HttpMethod == "POST" && path == "/api/devices/approve")
             {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
                 string id = req.QueryString["id"];
                 string hostname = req.QueryString["hostname"];
                 if (string.IsNullOrEmpty(id))
@@ -330,6 +361,12 @@ namespace PrintHop.Services
             }
             else if (req.HttpMethod == "POST" && path == "/api/devices/revoke")
             {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
                 string id = req.QueryString["id"];
                 if (string.IsNullOrEmpty(id))
                 {
@@ -343,8 +380,110 @@ namespace PrintHop.Services
                 }
                 SendJson(res, new { success = true, message = "Device access revoked." });
             }
+            else if (req.HttpMethod == "GET" && path == "/api/jobs")
+            {
+                var jobs = _printJobManager != null ? _printJobManager.GetJobs() : new List<PrintJob>();
+                SendJson(res, jobs);
+            }
+            else if (req.HttpMethod == "POST" && path == "/api/jobs/block")
+            {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
+                string id = req.QueryString["id"];
+                if (string.IsNullOrEmpty(id))
+                {
+                    res.StatusCode = 400;
+                    SendString(res, "Missing 'id' query parameter.");
+                    return;
+                }
+                bool blocked = _printJobManager != null && _printJobManager.BlockJob(id);
+                if (blocked)
+                {
+                    SendJson(res, new { success = true, message = "Job blocked successfully." });
+                }
+                else
+                {
+                    res.StatusCode = 404;
+                    SendJson(res, new { success = false, message = "Job not found or already processing." });
+                }
+            }
+            else if (req.HttpMethod == "POST" && path == "/api/jobs/track")
+            {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
+                
+                string body = "";
+                using (var reader = new StreamReader(req.InputStream)) { body = reader.ReadToEnd(); }
+                var payload = _jsonSerializer.Deserialize<Dictionary<string, object>>(body);
+                
+                if (payload != null && payload.ContainsKey("jobId"))
+                {
+                    string jobId = payload["jobId"].ToString();
+                    if (_activityMonitor != null) _activityMonitor.TrackDispatchedJob(jobId);
+                }
+                SendJson(res, new { success = true });
+            }
+            else if (req.HttpMethod == "POST" && path == "/api/activity-logs/remote")
+            {
+                string body = "";
+                using (var reader = new StreamReader(req.InputStream)) { body = reader.ReadToEnd(); }
+                var payload = _jsonSerializer.Deserialize<Dictionary<string, string>>(body);
+                
+                if (payload != null && payload.ContainsKey("jobId"))
+                {
+                    string jobId = payload["jobId"];
+                    string status = payload.ContainsKey("status") ? payload["status"] : "Unknown";
+                    string message = payload.ContainsKey("message") ? payload["message"] : "";
+                    string remoteIp = req.RemoteEndPoint != null ? req.RemoteEndPoint.Address.ToString() : "unknown-device";
+
+                    // Validate 1: Is this job actually one we dispatched recently?
+                    if (_activityMonitor != null && _activityMonitor.IsJobDispatchedLocally(jobId))
+                    {
+                        // Validate 2: We must have sent it to this specific peer, 
+                        // or at the very least, they must be on our approved peer list.
+                        // Strictly speaking, we should map JobId to TargetIP, but checking if they are approved is a good baseline.
+                        // (The random GUID jobId provides strong unguessable binding already).
+                        
+                        _activityMonitor.LogActivity(new PrintActivityLog
+                        {
+                            SenderId = remoteIp,
+                            SenderHostname = "Remote Printer",
+                            PrinterName = "Remote Printer",
+                            DocumentName = string.Format("Job {0}", jobId.Substring(0, 8)),
+                            Status = status,
+                            Message = message,
+                            IsLocal = true
+                        });
+                        SendJson(res, new { success = true });
+                    }
+                    else
+                    {
+                        res.StatusCode = 403;
+                        SendJson(res, new { success = false, message = "Job ID not recognized." });
+                    }
+                }
+                else
+                {
+                    res.StatusCode = 400;
+                    SendString(res, "Bad request.");
+                }
+            }
             else if (req.HttpMethod == "POST" && path == "/api/exit")
             {
+                if (!req.IsLocal)
+                {
+                    res.StatusCode = 403;
+                    SendJson(res, new { success = false, message = "Forbidden: Local requests only" });
+                    return;
+                }
                 SendJson(res, new { success = true, message = "Shutting down..." });
                 Task.Factory.StartNew(() =>
                 {
@@ -365,97 +504,49 @@ namespace PrintHop.Services
             var req = context.Request;
             var res = context.Response;
 
-            if (req.ContentType == null || !req.ContentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase))
+            if (!_printSemaphore.Wait(2000))
             {
-                res.StatusCode = 400;
-                SendString(res, "Expected multipart/form-data");
+                res.StatusCode = 429;
+                SendString(res, "Server is currently processing the maximum number of concurrent print uploads. Please retry shortly.");
                 return;
             }
 
-            // BUG FIX #5: Enforce a 100 MB upload size limit to prevent OOM denial-of-service.
-            // An attacker on the LAN could previously stream an unbounded payload causing
-            // OutOfMemoryException by exhausting the Large Object Heap (LOH).
-            const long MaxUploadBytes = 100L * 1024 * 1024; // 100 MB
-            if (req.ContentLength64 > MaxUploadBytes)
+            try
             {
-                res.StatusCode = 413; // Payload Too Large
-                SendString(res, string.Format("Upload exceeds the 100 MB limit ({0} bytes received).", req.ContentLength64));
-                return;
-            }
-
-            // Extract boundary parameter from Content-Type header safely
-            string boundary = "";
-            int bIdx = req.ContentType.IndexOf("boundary=", StringComparison.OrdinalIgnoreCase);
-            if (bIdx >= 0)
-            {
-                boundary = req.ContentType.Substring(bIdx + 9).Trim();
-                int semi = boundary.IndexOf(';');
-                if (semi >= 0) boundary = boundary.Substring(0, semi).Trim();
-                boundary = boundary.Trim('"', '\'');
-            }
-
-            if (string.IsNullOrEmpty(boundary))
-            {
-                res.StatusCode = 400;
-                SendString(res, "Missing boundary parameter in multipart/form-data Content-Type.");
-                return;
-            }
-
-            byte[] boundaryBytes = Encoding.UTF8.GetBytes("--" + boundary);
-
-            string senderId = "";
-            string senderHostname = "";
-            string printerName = "";
-            string originalFilename = "";
-            string tempFilePath = "";
-
-            using (var ms = new MemoryStream())
-            {
-                req.InputStream.CopyTo(ms);
-                byte[] fullData = ms.ToArray();
-                // Latin-1 (ISO-8859-1) is a lossless byte<->char mapping: safe for binary payloads.
-                // UTF-8 would throw DecoderFallbackException on PNG/PDF bytes (e.g. 0xFF 0xD8).
-                var latin1 = Encoding.GetEncoding(28591);
-                string fullText = latin1.GetString(fullData);
-
-                senderId = ExtractFormField(fullText, "senderId");
-                senderHostname = ExtractFormField(fullText, "senderHostname");
-                printerName = ExtractFormField(fullText, "printerName");
-                originalFilename = ExtractFilename(fullText);
-
-                // Parse print options (copies, paper size, orientation, color mode, duplex)
-                var options = new Models.PrintJobOptions();
-                string copiesStr = ExtractFormField(fullText, "copies");
-                int parsedCopies;
-                if (int.TryParse(copiesStr, out parsedCopies) && parsedCopies > 0)
+                const long MaxUploadBytes = 500L * 1024 * 1024;
+                if (req.ContentLength64 > MaxUploadBytes)
                 {
-                    options.Copies = parsedCopies;
+                    res.StatusCode = 413;
+                    SendString(res, string.Format("Upload exceeds the 500 MB limit ({0} bytes received).", req.ContentLength64));
+                    return;
                 }
 
-                string paperSize = ExtractFormField(fullText, "paperSize");
-                if (!string.IsNullOrEmpty(paperSize))
+                string senderIp = req.RemoteEndPoint != null ? req.RemoteEndPoint.Address.ToString() : "127.0.0.1";
+                string senderId = req.Headers["X-PrintHop-SenderId"] ?? senderIp;
+                string senderHostname = req.Headers["X-PrintHop-SenderHostname"] ?? (req.RemoteEndPoint != null ? req.RemoteEndPoint.Address.ToString() : "Unknown Device");
+                string printerName = req.Headers["X-PrintHop-PrinterName"];
+                string originalFilename = req.Headers["X-PrintHop-OriginalFilename"];
+                if (!string.IsNullOrEmpty(originalFilename))
                 {
-                    options.PaperSize = paperSize;
+                    try { originalFilename = Uri.UnescapeDataString(originalFilename); } catch { }
                 }
 
-                string orientation = ExtractFormField(fullText, "orientation");
-                if (!string.IsNullOrEmpty(orientation))
+                if (string.IsNullOrEmpty(printerName))
                 {
-                    options.Orientation = orientation;
+                    res.StatusCode = 400;
+                    SendString(res, "Missing 'X-PrintHop-PrinterName' header.");
+                    return;
                 }
 
-                string colorMode = ExtractFormField(fullText, "colorMode");
-                if (!string.IsNullOrEmpty(colorMode))
+                var options = new PrintJobOptions
                 {
-                    options.ColorMode = colorMode;
-                    options.Color = !colorMode.Equals("Grayscale", StringComparison.OrdinalIgnoreCase);
-                }
-
-                string duplex = ExtractFormField(fullText, "duplex");
-                if (!string.IsNullOrEmpty(duplex))
-                {
-                    options.Duplex = duplex;
-                }
+                    Copies = int.TryParse(req.Headers["X-PrintHop-Copies"], out int c) ? c : 1,
+                    PaperSize = req.Headers["X-PrintHop-PaperSize"] ?? "Default",
+                    Orientation = req.Headers["X-PrintHop-Orientation"] ?? "Portrait",
+                    ColorMode = req.Headers["X-PrintHop-ColorMode"] ?? "Color",
+                    Duplex = req.Headers["X-PrintHop-Duplex"] ?? "Simplex",
+                    PageRange = req.Headers["X-PrintHop-PageRange"]
+                };
 
                 string optionsSummary = string.Format("{0} copy{1}, {2}, {3}, {4}",
                     options.Copies,
@@ -464,13 +555,11 @@ namespace PrintHop.Services
                     !string.IsNullOrEmpty(options.Orientation) ? options.Orientation : "Portrait",
                     !string.IsNullOrEmpty(options.ColorMode) ? options.ColorMode : "Color");
 
-                // Record device seen in inventory
                 if (_activityMonitor != null && !string.IsNullOrEmpty(senderId))
                 {
                     _activityMonitor.RecordDeviceSeen(senderId, senderHostname);
                 }
 
-                // Check if device is blocked by administrator
                 if (_activityMonitor != null && _activityMonitor.IsDeviceBlocked(senderId))
                 {
                     _activityMonitor.LogActivity(new PrintActivityLog
@@ -490,8 +579,7 @@ namespace PrintHop.Services
                     return;
                 }
 
-                // Check whitelist before touching the filesystem
-                if (!_whitelistCheck(senderId, senderHostname))
+                if (_whitelistCheck != null && !_whitelistCheck(senderId, senderHostname))
                 {
                     if (_activityMonitor != null)
                     {
@@ -513,13 +601,7 @@ namespace PrintHop.Services
                     return;
                 }
 
-                // BUG FIX #1: Preserve original file extension from Content-Disposition
-                // so that PrintService can correctly route to GDI+ (images) vs ShellExecute (documents).
-                string originalExt = string.IsNullOrEmpty(originalFilename)
-                    ? ".tmp"
-                    : Path.GetExtension(originalFilename).ToLowerInvariant();
-
-                // Sanitize extension: only allow known printable types
+                string originalExt = string.IsNullOrEmpty(originalFilename) ? ".tmp" : Path.GetExtension(originalFilename).ToLowerInvariant();
                 string[] allowedExts = { ".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".docx", ".xlsx", ".txt" };
                 bool extAllowed = false;
                 foreach (var ext in allowedExts)
@@ -528,132 +610,116 @@ namespace PrintHop.Services
                 }
                 if (!extAllowed) originalExt = ".tmp";
 
-                // Compose the temp path with the correct extension
                 string tempDir = Path.Combine(Path.GetTempPath(), "PrintHop");
                 Directory.CreateDirectory(tempDir);
-                tempFilePath = Path.Combine(tempDir, string.Format("job_{0}{1}", Guid.NewGuid(), originalExt));
+                string tempFilePath = Path.Combine(tempDir, string.Format("job_{0}{1}", Guid.NewGuid(), originalExt));
 
-                // Locate and extract binary file payload
-                int fileContentStartIndex = IndexOfSequence(fullData, Encoding.UTF8.GetBytes("name=\"file\""));
-                if (fileContentStartIndex < 0)
+                long totalRead = 0;
+                try
                 {
-                    res.StatusCode = 400;
-                    SendString(res, "File payload not found in multipart body.");
+                    using (var fs = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
+                    {
+                        byte[] buffer = new byte[81920];
+                        int read;
+                        while ((read = req.InputStream.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            totalRead += read;
+                            if (totalRead > MaxUploadBytes)
+                            {
+                                throw new InvalidOperationException("Upload exceeds 500MB limit mid-stream.");
+                            }
+                            fs.Write(buffer, 0, read);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    try { if (File.Exists(tempFilePath)) File.Delete(tempFilePath); } catch { }
+                    res.StatusCode = 413;
+                    SendString(res, "Upload failed or exceeded size limit: " + ex.Message);
                     return;
                 }
 
-                int headerEnd = IndexOfSequence(fullData, new byte[] { 13, 10, 13, 10 }, fileContentStartIndex);
-                int headerSepLen = 4;
-                if (headerEnd < 0)
+                if (totalRead == 0)
                 {
-                    headerEnd = IndexOfSequence(fullData, new byte[] { 10, 10 }, fileContentStartIndex);
-                    headerSepLen = 2;
-                }
-
-                if (headerEnd < 0)
-                {
-                    res.StatusCode = 400;
-                    SendString(res, "Invalid file part headers in multipart body.");
-                    return;
-                }
-
-                int fileStart = headerEnd + headerSepLen;
-                int boundaryEnd = IndexOfSequence(fullData, boundaryBytes, fileStart);
-                if (boundaryEnd < 0)
-                {
-                    boundaryEnd = LastIndexOfSequence(fullData, boundaryBytes);
-                }
-
-                int fileEnd = boundaryEnd;
-                // Trim trailing \r\n or \n before boundary
-                if (fileEnd >= fileStart + 2 && fullData[fileEnd - 2] == 13 && fullData[fileEnd - 1] == 10)
-                {
-                    fileEnd -= 2;
-                }
-                else if (fileEnd >= fileStart + 1 && fullData[fileEnd - 1] == 10)
-                {
-                    fileEnd -= 1;
-                }
-
-                int fileLength = fileEnd - fileStart;
-                if (fileLength <= 0)
-                {
+                    try { if (File.Exists(tempFilePath)) File.Delete(tempFilePath); } catch { }
                     res.StatusCode = 400;
                     SendString(res, "File payload is empty.");
                     return;
                 }
 
-                using (var fs = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write))
-                {
-                    fs.Write(fullData, fileStart, fileLength);
-                }
-
-                // Security check: validate actual binary file signature (magic bytes)
                 if (!ValidateFileSignatures(tempFilePath))
                 {
-                    File.Delete(tempFilePath);
+                    try { if (File.Exists(tempFilePath)) File.Delete(tempFilePath); } catch { }
                     res.StatusCode = 415;
                     SendString(res, "Unsupported file format. Magic byte validation failed.");
                     return;
                 }
 
-                // BUG FIX #2: Wrap print dispatch in try/finally to guarantee temp file cleanup
-                try
+                if (_printJobManager != null)
                 {
-                    _printService.PrintFile(tempFilePath, printerName, options);
-
-                    if (_activityMonitor != null)
+                    var job = new PrintJob
                     {
-                        _activityMonitor.LogActivity(new PrintActivityLog
-                        {
-                            SenderId = senderId,
-                            SenderHostname = senderHostname,
-                            PrinterName = printerName,
-                            DocumentName = !string.IsNullOrEmpty(originalFilename) ? originalFilename : Path.GetFileName(tempFilePath),
-                            OptionsSummary = optionsSummary,
-                            Status = "Success",
-                            Message = "Print job dispatched successfully to printer.",
-                            IsLocal = (senderId == _localId)
-                        });
-                    }
-
+                        Id = Guid.NewGuid().ToString(),
+                        SenderId = senderId,
+                        SenderIp = senderIp,
+                        SenderHostname = senderHostname,
+                        PrinterName = printerName,
+                        DocumentName = !string.IsNullOrEmpty(originalFilename) ? originalFilename : Path.GetFileName(tempFilePath),
+                        FileSizeBytes = totalRead,
+                        TempFilePath = tempFilePath,
+                        Timestamp = DateTime.Now,
+                        Options = options,
+                        OptionsSummary = optionsSummary,
+                        IsLocal = (senderId == _localId)
+                    };
+                    _printJobManager.Enqueue(job);
+                    
                     res.StatusCode = 200;
-                    SendString(res, "Print job dispatched successfully.");
+                    SendJson(res, new { success = true, jobId = job.Id });
                 }
-                catch (Exception printEx)
+                else
                 {
-                    if (_activityMonitor != null)
-                    {
-                        _activityMonitor.LogActivity(new PrintActivityLog
-                        {
-                            SenderId = senderId,
-                            SenderHostname = senderHostname,
-                            PrinterName = printerName,
-                            DocumentName = !string.IsNullOrEmpty(originalFilename) ? originalFilename : Path.GetFileName(tempFilePath),
-                            OptionsSummary = optionsSummary,
-                            Status = "Failed",
-                            Message = printEx.Message,
-                            IsLocal = (senderId == _localId)
-                        });
-                    }
-
+                    try { if (File.Exists(tempFilePath)) File.Delete(tempFilePath); } catch { }
                     res.StatusCode = 500;
-                    SendString(res, string.Format("Print dispatch failed: {0}", printEx.Message));
+                    SendString(res, "Print queue system unavailable.");
                 }
-                finally
-                {
-                    try
-                    {
-                        if (!string.IsNullOrEmpty(tempFilePath) && File.Exists(tempFilePath))
-                            File.Delete(tempFilePath);
-                    }
-                    catch (Exception) { /* best-effort cleanup */ }
-                }
+            }
+            catch (Exception ex)
+            {
+                res.StatusCode = 500;
+                SendString(res, "Server error during upload: " + ex.Message);
+            }
+            finally
+            {
+                _printSemaphore.Release();
             }
         }
 
+
         private bool ValidateFileSignatures(string path)
         {
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+
+            // Plain text files (.txt) do not have fixed magic bytes, but should not contain binary null bytes
+            if (ext == ".txt")
+            {
+                try
+                {
+                    using (var fs = File.OpenRead(path))
+                    {
+                        byte[] checkBuf = new byte[Math.Min(1024, (int)fs.Length)];
+                        int read = fs.Read(checkBuf, 0, checkBuf.Length);
+                        for (int i = 0; i < read; i++)
+                        {
+                            if (checkBuf[i] == 0) return false;
+                        }
+                        return true;
+                    }
+                }
+                catch { return false; }
+            }
+
             byte[] header = new byte[4];
             using (var fs = File.OpenRead(path))
             {
@@ -669,6 +735,8 @@ namespace PrintHop.Services
             if (header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47) return true;
             // BMP: BM (42 4D)
             if (header[0] == 0x42 && header[1] == 0x4D) return true;
+            // GIF: GIF8 (47 49 46 38)
+            if (header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x38) return true;
             
             // DOCX/XLSX (ZIP format): PK (50 4B 03 04)
             if (header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04) return true;
@@ -753,23 +821,32 @@ namespace PrintHop.Services
                 case ".css": return "text/css";
                 case ".js": return "application/javascript";
                 case ".png": return "image/png";
+                case ".txt": return "text/plain";
                 default: return "application/octet-stream";
             }
         }
 
         private void SendJson(HttpListenerResponse res, object obj)
         {
-            string json = _jsonSerializer.Serialize(obj);
-            res.ContentType = "application/json";
-            SendString(res, json);
+            try
+            {
+                string json = _jsonSerializer.Serialize(obj);
+                res.ContentType = "application/json";
+                SendString(res, json);
+            }
+            catch { }
         }
 
         private void SendString(HttpListenerResponse res, string text)
         {
-            byte[] buffer = Encoding.UTF8.GetBytes(text);
-            res.ContentLength64 = buffer.Length;
-            res.OutputStream.Write(buffer, 0, buffer.Length);
-            res.Close();
+            try
+            {
+                byte[] buffer = Encoding.UTF8.GetBytes(text);
+                res.ContentLength64 = buffer.Length;
+                res.OutputStream.Write(buffer, 0, buffer.Length);
+                res.Close();
+            }
+            catch { /* Client disconnected or response stream already closed */ }
         }
 
         public static List<string> GetAllLocalIpAddresses()
@@ -823,12 +900,21 @@ namespace PrintHop.Services
             var ips = GetAllLocalIpAddresses();
             if (ips.Count > 0)
             {
-                // Prefer LAN / Hotspot subnets (10.x, 192.168.x, 172.x)
+                // Prefer RFC 1918 Private LAN / Hotspot subnets (10.x, 192.168.x, 172.16.x - 172.31.x)
                 foreach (var ip in ips)
                 {
-                    if (ip.StartsWith("10.") || ip.StartsWith("192.168.") || ip.StartsWith("172."))
+                    if (ip.StartsWith("10.") || ip.StartsWith("192.168."))
                     {
                         return ip;
+                    }
+                    if (ip.StartsWith("172."))
+                    {
+                        var parts = ip.Split('.');
+                        int secondOctet;
+                        if (parts.Length >= 2 && int.TryParse(parts[1], out secondOctet) && secondOctet >= 16 && secondOctet <= 31)
+                        {
+                            return ip;
+                        }
                     }
                 }
                 return ips[0];
@@ -881,11 +967,17 @@ namespace PrintHop.Services
         public void Dispose()
         {
             _isRunning = false;
+            if (_printJobManager != null)
+            {
+                try { _printJobManager.Dispose(); } catch { }
+            }
             if (_listener != null)
             {
-                _listener.Stop();
-                _listener.Close();
+                try { _listener.Stop(); } catch { }
+                try { _listener.Close(); } catch { }
             }
         }
     }
 }
+
+

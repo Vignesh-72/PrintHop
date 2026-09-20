@@ -17,12 +17,13 @@ namespace PrintHop.Services
 
         private readonly List<PrintActivityLog> _logs = new List<PrintActivityLog>();
         private readonly Dictionary<string, DeviceInfo> _devices = new Dictionary<string, DeviceInfo>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _dispatchedJobs = new HashSet<string>();
 
         private const int MaxLogHistory = 100;
 
         public ActivityMonitorService()
         {
-            _serializer = new JavaScriptSerializer();
+            _serializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             _logsPath = Path.Combine(baseDir, "activity_logs.json");
             _devicesPath = Path.Combine(baseDir, "devices.json");
@@ -30,6 +31,23 @@ namespace PrintHop.Services
 
             LoadDevices();
             LoadLogs();
+        }
+
+        public void TrackDispatchedJob(string jobId)
+        {
+            lock (_lock)
+            {
+                _dispatchedJobs.Add(jobId);
+                if (_dispatchedJobs.Count > 1000) _dispatchedJobs.Clear(); // simple bounded cache
+            }
+        }
+
+        public bool IsJobDispatchedLocally(string jobId)
+        {
+            lock (_lock)
+            {
+                return _dispatchedJobs.Contains(jobId);
+            }
         }
 
         public void LogActivity(PrintActivityLog log)

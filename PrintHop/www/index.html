@@ -7,7 +7,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/png" href="logo.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="logo_transparent_16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="logo_transparent_32x32.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="logo_transparent_64x64.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="logo_transparent_192x192.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="logo_transparent_192x192.png">
     <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
@@ -16,7 +20,7 @@
         <div class="header-content">
             <div class="brand">
                 <div class="brand-logo">
-                    <img src="logo.png" alt="PrintHop" class="brand-logo-img">
+                    <img src="logo_transparent_192x192.png" alt="PrintHop" class="brand-logo-img">
                 </div>
                 <div class="brand-info">
                     <span class="brand-name">PrintHop</span>
@@ -131,9 +135,9 @@
                     </div>
                     <div class="drop-text">
                         <p class="drop-primary" id="drop-text-primary">Choose a file or drag &amp; drop here</p>
-                        <p class="drop-secondary">Supports PDF, DOCX, XLSX, PNG, JPG, BMP</p>
+                        <p class="drop-secondary">Supports PDF, DOCX, XLSX, PNG, JPG, BMP, TXT (up to 500 MB)</p>
                     </div>
-                    <input type="file" id="file-input" class="file-input-hidden" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.bmp">
+                    <input type="file" id="file-input" class="file-input-hidden" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.bmp,.txt">
                 </div>
 
                 <div id="selected-file" class="selected-file-box hidden">
@@ -281,7 +285,18 @@
             <!-- Sub Nav Filter Bar -->
             <div class="view-filter-bar">
                 <div class="segmented-control">
-                    <button class="segment-btn active" id="subtab-logs" data-subview="subview-logs">
+                    <button class="segment-btn active" id="subtab-queue" data-subview="subview-queue">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                        <span>Print Queue</span>
+                    </button>
+                    <button class="segment-btn" id="subtab-logs" data-subview="subview-logs">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                             <polyline points="14 2 14 8 20 8"></polyline>
@@ -316,8 +331,22 @@
                 </div>
             </div>
 
-            <!-- Subview 1: Activity Log Stream -->
-            <section id="subview-logs" class="subview-content">
+            <!-- Subview 1: Print Queue -->
+            <section id="subview-queue" class="subview-content">
+                <div class="subview-header">
+                    <div class="subview-title-wrap">
+                        <h3>Active Print Queue</h3>
+                        <p class="subview-desc">Monitor printing progress and manage jobs currently in the queue.</p>
+                    </div>
+                </div>
+
+                <div id="print-queue-list" class="activity-feed">
+                    <div class="empty-notice">Loading queue...</div>
+                </div>
+            </section>
+
+            <!-- Subview 2: Activity Log Stream -->
+            <section id="subview-logs" class="subview-content hidden">
                 <div class="subview-header">
                     <div class="subview-title-wrap">
                         <h3>Audit Stream</h3>

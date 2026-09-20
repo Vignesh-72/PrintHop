@@ -9,19 +9,38 @@ namespace PrintHop
     {
         private static Mutex _mutex;
 
+        /// <summary>
+        /// Appends a message to %TEMP%\PrintHop\crash.log, rotating the file when it exceeds 1 MB.
+        /// Writing here avoids UAC-protected Program Files paths where AppendAllText would throw.
+        /// </summary>
+        private static void AppendCrashLog(string message)
+        {
+            try
+            {
+                string logDir = Path.Combine(Path.GetTempPath(), "PrintHop");
+                Directory.CreateDirectory(logDir);
+                string logPath = Path.Combine(logDir, "crash.log");
+                var fi = new FileInfo(logPath);
+                if (fi.Exists && fi.Length > 1024 * 1024) // Rotate at 1 MB
+                    File.Delete(logPath);
+                File.AppendAllText(logPath, message);
+            }
+            catch { /* Cannot log the logger */ }
+        }
+
         [STAThread]
         static void Main()
         {
             AppDomain.CurrentDomain.UnhandledException += (s, e) =>
             {
                 string msg = DateTime.Now + ": UNHANDLED EXCEPTION: " + (e.ExceptionObject != null ? e.ExceptionObject.ToString() : "null") + "\n";
-                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), msg);
+                AppendCrashLog(msg);
             };
 
             Application.ThreadException += (s, e) =>
             {
                 string msg = DateTime.Now + ": THREAD EXCEPTION: " + (e.Exception != null ? e.Exception.ToString() : "null") + "\n";
-                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), msg);
+                AppendCrashLog(msg);
             };
 
             const string appName = "Global\\PrintHop_SingleInstance";
@@ -45,7 +64,7 @@ namespace PrintHop
             }
             catch (Exception ex)
             {
-                File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash.log"), ex.ToString());
+                AppendCrashLog(DateTime.Now + ": STARTUP ERROR: " + ex.ToString() + "\n");
                 MessageBox.Show(ex.ToString(), "PrintHop Startup Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally

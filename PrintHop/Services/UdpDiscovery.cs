@@ -18,7 +18,7 @@ namespace PrintHop.Services
         private UdpClient _udpClient;
         private CancellationTokenSource _cts;
         private readonly ConcurrentDictionary<string, Peer> _peers = new ConcurrentDictionary<string, Peer>();
-        private readonly JavaScriptSerializer _jsonSerializer = new JavaScriptSerializer();
+        private readonly JavaScriptSerializer _jsonSerializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         
         private readonly string _localId;
         private readonly string _localHostname;
@@ -65,21 +65,25 @@ namespace PrintHop.Services
                     var packet = _jsonSerializer.Deserialize<AnnouncePacket>(json);
                     if (packet != null && packet.Type == "announce" && packet.Id != _localId)
                     {
+                        // Verify real IP from UDP socket sender endpoint to prevent IP spoofing
+                        string verifiedIp = result.RemoteEndPoint.Address.ToString();
+                        int validPort = (packet.HttpPort >= 1024 && packet.HttpPort <= 65535) ? packet.HttpPort : 4222;
+
                         _peers.AddOrUpdate(packet.Id, 
                             id => new Peer 
                             { 
                                 Id = packet.Id, 
                                 Hostname = packet.Hostname, 
-                                Ip = packet.Ip, 
-                                HttpPort = packet.HttpPort, 
+                                Ip = verifiedIp, 
+                                HttpPort = validPort, 
                                 Printers = packet.Printers, 
                                 LastSeen = DateTime.UtcNow 
                             },
                             (id, existing) => 
                             {
                                 existing.Hostname = packet.Hostname;
-                                existing.Ip = packet.Ip;
-                                existing.HttpPort = packet.HttpPort;
+                                existing.Ip = verifiedIp;
+                                existing.HttpPort = validPort;
                                 existing.Printers = packet.Printers;
                                 existing.LastSeen = DateTime.UtcNow;
                                 return existing;
@@ -154,8 +158,27 @@ namespace PrintHop.Services
 
         public void Dispose()
         {
-            if (_cts != null) _cts.Cancel();
-            if (_udpClient != null) _udpClient.Dispose();
+            try
+            {
+                if (_cts != null)
+                {
+                    _cts.Cancel();
+                    _cts.Dispose();
+                    _cts = null;
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (_udpClient != null)
+                {
+                    _udpClient.Close();
+                    _udpClient.Dispose();
+                    _udpClient = null;
+                }
+            }
+            catch { }
         }
     }
 }

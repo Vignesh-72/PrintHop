@@ -16,6 +16,8 @@ namespace PrintHop
         private readonly HashSet<string> _whitelist;
         private readonly JavaScriptSerializer _jsonSerializer;
         private readonly ActivityMonitorService _activityMonitor;
+        private readonly Dictionary<string, System.Threading.Tasks.Task<bool>> _pendingDialogs = new Dictionary<string, System.Threading.Tasks.Task<bool>>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _dialogLock = new object();
         
         private HttpServer _httpServer;
         private UdpDiscovery _udpDiscovery;
@@ -25,7 +27,7 @@ namespace PrintHop
 
         public TrayAppContext()
         {
-            _jsonSerializer = new JavaScriptSerializer();
+            _jsonSerializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
             _whitelistPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "whitelist.json");
             _whitelist = LoadWhitelist();
             _activityMonitor = new ActivityMonitorService();
@@ -44,10 +46,20 @@ namespace PrintHop
                 Text = "PrintHop"
             };
             
-            _trayIcon.DoubleClick += OpenWebUI;
+            _trayIcon.MouseClick += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    OpenWebUI(s, e);
+                }
+            };
+            _trayIcon.DoubleClick += (s, e) => OpenWebUI(s, e);
 
             StartServices();
             
+            // Auto-open the web UI on launch
+            OpenWebUI(null, EventArgs.Empty);
+
             if (_httpServer.BoundOnLan)
             {
                 string lanIp = _httpServer.GetLocalIpAddress();
@@ -70,7 +82,8 @@ namespace PrintHop
 
             // 2. Start HTTP server
             _udpDiscovery = new UdpDiscovery(_localId, 4222, _printService); // HTTP port passed, will update later if it changes
-            _httpServer = new HttpServer(_localId, _udpDiscovery, _printService, WhitelistCheck, _activityMonitor);
+            var printJobManager = new PrintJobManager(_printService, _activityMonitor);
+            _httpServer = new HttpServer(_localId, _udpDiscovery, _printService, WhitelistCheck, _activityMonitor, printJobManager);
             _httpPort = _httpServer.Start();
 
             // 3. If the port changed from 4222 because it was taken, restart discovery with the correct port
@@ -110,8 +123,44 @@ namespace PrintHop
                 }
             }
 
-            // If not in whitelist, ask user on the desktop
-            bool approved = false;
+            // Deduplicate concurrent approval dialogs for the same device
+            System.Threading.Tasks.Task<bool> dialogTask;
+            lock (_dialogLock)
+            {
+                if (_activityMonitor != null && _activityMonitor.IsDeviceApproved(senderId)) return true;
+                if (_activityMonitor != null && _activityMonitor.IsDeviceBlocked(senderId)) return false;
+
+                if (!_pendingDialogs.TryGetValue(senderId, out dialogTask))
+                {
+                    dialogTask = System.Threading.Tasks.Task.Run(() => PromptUserForApproval(senderId, senderHostname));
+                    _pendingDialogs[senderId] = dialogTask;
+                }
+            }
+
+            try
+            {
+                // Timeout after 45 seconds so worker thread isn't held open indefinitely
+                if (dialogTask.Wait(TimeSpan.FromSeconds(45)))
+                {
+                    return dialogTask.Result;
+                }
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                lock (_dialogLock)
+                {
+                    _pendingDialogs.Remove(senderId);
+                }
+            }
+        }
+
+        private bool PromptUserForApproval(string senderId, string senderHostname)
+        {
             try
             {
                 var dr = MessageBox.Show(
@@ -123,7 +172,6 @@ namespace PrintHop
                     
                 if (dr == DialogResult.Yes)
                 {
-                    approved = true;
                     if (_activityMonitor != null)
                     {
                         _activityMonitor.ApproveDevice(senderId, senderHostname);
@@ -133,6 +181,7 @@ namespace PrintHop
                         _whitelist.Add(senderId);
                         SaveWhitelist();
                     }
+                    return true;
                 }
                 else
                 {
@@ -140,15 +189,13 @@ namespace PrintHop
                     {
                         _activityMonitor.RecordDeviceSeen(senderId, senderHostname);
                     }
+                    return false;
                 }
             }
             catch (Exception)
             {
-                // Fallback: non-interactive or desktop station error
-                approved = false;
+                return false;
             }
-
-            return approved;
         }
 
         private HashSet<string> LoadWhitelist()
@@ -193,11 +240,18 @@ namespace PrintHop
 
         private void OpenWebUI(object sender, EventArgs e)
         {
-            Process.Start(new ProcessStartInfo
+            try
             {
-                FileName = string.Format("http://localhost:{0}", _httpPort),
-                UseShellExecute = true
-            });
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = string.Format("http://localhost:{0}", _httpPort),
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Failed to open web UI: " + ex.Message);
+            }
         }
 
         private void Exit(object sender, EventArgs e)

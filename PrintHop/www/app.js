@@ -156,10 +156,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     p.classList.add('hidden');
                 }
             });
-
             if (targetViewId === 'activity-view') {
                 fetchActivityLogs();
                 fetchDevices();
+                if (typeof fetchPrintQueue === 'function') fetchPrintQueue();
             }
         });
     });
@@ -195,11 +195,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (manualBlockBtn && manualBlockInput) {
         manualBlockBtn.addEventListener('click', () => {
             const val = manualBlockInput.value.trim();
-            if (!val) {
-                showToast('Please enter a device ID or hostname to block', 'error');
+            if (!val || val.length < 2 || val.length > 128) {
+                showToast('Please enter a valid device ID or hostname to block', 'error');
                 return;
             }
-            blockDevice(val, val);
+            const sanitized = val.replace(/[<>"'/\\&]/g, '');
+            if (!sanitized) {
+                showToast('Invalid device identifier entered', 'error');
+                return;
+            }
+            blockDevice(sanitized, sanitized);
             manualBlockInput.value = '';
         });
 
@@ -606,6 +611,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function handleFileSelect(file) {
+        if (!file) return;
+        const maxBytes = 500 * 1024 * 1024;
+        if (file.size > maxBytes) {
+            showToast('File exceeds the 500 MB maximum size limit.', 'error');
+            removeFileBtn.click();
+            return;
+        }
         selectedFile = file;
         filenameDisplay.textContent = file.name;
         selectedFileContainer.classList.remove('hidden');
@@ -624,17 +636,18 @@ document.addEventListener('DOMContentLoaded', () => {
         printBtn.disabled = true;
         printBtn.textContent = 'Dispatching...';
 
-        const formData = new FormData();
-        formData.append('senderId', selfInfo.id);
-        formData.append('senderHostname', selfInfo.hostname);
-        formData.append('printerName', selectedPrinter.printerName);
-        formData.append('file', selectedFile);
+        const headers = {
+            'X-PrintHop-SenderId': selfInfo.id,
+            'X-PrintHop-SenderHostname': selfInfo.hostname,
+            'X-PrintHop-PrinterName': selectedPrinter.printerName,
+            'X-PrintHop-OriginalFilename': encodeURIComponent(selectedFile.name)
+        };
 
-        if (copiesInput) formData.append('copies', copiesInput.value || '1');
-        if (paperSizeSelect) formData.append('paperSize', paperSizeSelect.value || 'Default');
-        if (orientationSelect) formData.append('orientation', orientationSelect.value || 'Portrait');
-        if (colorModeSelect) formData.append('colorMode', colorModeSelect.value || 'Color');
-        if (duplexSelect) formData.append('duplex', duplexSelect.value || 'Simplex');
+        if (copiesInput) headers['X-PrintHop-Copies'] = copiesInput.value || '1';
+        if (paperSizeSelect) headers['X-PrintHop-PaperSize'] = paperSizeSelect.value || 'Default';
+        if (orientationSelect) headers['X-PrintHop-Orientation'] = orientationSelect.value || 'Portrait';
+        if (colorModeSelect) headers['X-PrintHop-ColorMode'] = colorModeSelect.value || 'Color';
+        if (duplexSelect) headers['X-PrintHop-Duplex'] = duplexSelect.value || 'Simplex';
 
         try {
             const targetPeer = selectedPrinter.peer;
@@ -648,10 +661,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const res = await fetch(targetUrl, {
                 method: 'POST',
-                body: formData
+                headers: headers,
+                body: selectedFile
             });
 
             if (res.ok) {
+                try {
+                    const data = await res.json();
+                    if (data && data.success && data.jobId) {
+                        // Register this job locally so we accept webhooks for it
+                        await fetch('/api/jobs/track', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ jobId: data.jobId })
+                        });
+                    }
+                } catch (e) {
+                    // Fallback if not json
+                }
                 showToast('Print job dispatched successfully', 'success');
                 removeFileBtn.click();
                 fetchActivityLogs();
@@ -694,6 +721,99 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Failed to fetch devices:', e);
         }
     }
+
+    async function fetchPrintQueue() {
+        try {
+            const res = await fetch('/api/jobs');
+            if (!res.ok) return;
+            const queue = await res.json();
+            renderPrintQueue(queue);
+        } catch (e) {
+            console.error('Failed to fetch print queue:', e);
+        }
+    }
+
+    function renderPrintQueue(queue) {
+        const queueList = document.getElementById('print-queue-list');
+        if (!queueList) return;
+
+        queueList.innerHTML = '';
+        if (!queue || queue.length === 0) {
+            queueList.innerHTML = '<div class="empty-notice">No print jobs currently in the queue.</div>';
+            return;
+        }
+
+        queue.forEach(job => {
+            const el = document.createElement('div');
+            el.className = 'activity-item';
+
+            const statusClass = job.Status === 'Printing' ? 'status-success' : 'status-unknown';
+            const blockBtnHtml = job.Status === 'Queued' ? `<button class="btn-danger-ghost block-job-btn" style="margin-left:auto; padding:4px 8px; font-size:12px;" data-id="${job.Id}">Block</button>` : `<span style="margin-left:auto; font-size:12px; color:var(--text-secondary);">${job.Status}</span>`;
+            
+            // Format time correctly from C# datetime serialization
+            let timeStr = 'Unknown time';
+            if (job.Timestamp) {
+                const match = new RegExp('\\\\/Date\\((\\d+)\\)\\\\/').exec(job.Timestamp) || new RegExp('\\/Date\\((\\d+)\\)\\/').exec(job.Timestamp);
+                if (match) {
+                    timeStr = new Date(parseInt(match[1])).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                } else {
+                    timeStr = new Date(job.Timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                }
+            }
+
+            el.innerHTML = `
+                <div class="activity-icon ${statusClass}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                        <rect x="6" y="14" width="12" height="8"></rect>
+                    </svg>
+                </div>
+                <div class="activity-content" style="flex:1;">
+                    <div class="activity-header">
+                        <span class="activity-title">${escapeHtml(job.DocumentName)} &rarr; ${escapeHtml(job.PrinterName)}</span>
+                        <span class="activity-time">${timeStr}</span>
+                    </div>
+                    <div class="activity-body">
+                        <p class="activity-desc">From: <strong>${escapeHtml(job.SenderHostname)}</strong> | Status: <strong>${escapeHtml(job.Status)}</strong></p>
+                    </div>
+                </div>
+                <div class="activity-actions">
+                    ${blockBtnHtml}
+                </div>
+            `;
+            queueList.appendChild(el);
+        });
+
+        document.querySelectorAll('.block-job-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const id = e.target.getAttribute('data-id');
+                if (confirm('Are you sure you want to block and cancel this queued job?')) {
+                    try {
+                        const res = await fetch('/api/jobs/block?id=' + encodeURIComponent(id), { method: 'POST' });
+                        if (res.ok) {
+                            showToast('Job blocked successfully', 'success');
+                            fetchPrintQueue();
+                        } else {
+                            const data = await res.json();
+                            showToast(data.message || 'Failed to block job', 'error');
+                        }
+                    } catch {
+                        showToast('Network error while blocking job', 'error');
+                    }
+                }
+            });
+        });
+    }
+
+    // Periodically refresh the queue if the subview is open
+    setInterval(() => {
+        const activityView = document.getElementById('activity-view');
+        const queueView = document.getElementById('subview-queue');
+        if (activityView && !activityView.classList.contains('hidden') && queueView && !queueView.classList.contains('hidden')) {
+            fetchPrintQueue();
+        }
+    }, 2000);
 
     function updateStats() {
         if (statTotalPrints) {
@@ -794,8 +914,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${(!log.IsLocal && senderId) ? `
                             <div class="activity-actions">
                                 ${isBlocked 
-                                    ? `<button class="btn-secondary-sm" onclick="window.unblockDeviceById('${senderId}')">Unblock</button>`
-                                    : `<button class="btn-danger-ghost" onclick="window.blockDeviceById('${senderId}', '${hostname}')">Block Device</button>`
+                                    ? `<button class="btn-secondary-sm" data-action="unblock" data-device-id="${senderId}">Unblock</button>`
+                                    : `<button class="btn-danger-ghost" data-action="block" data-device-id="${senderId}" data-hostname="${hostname}">Block Device</button>`
                                 }
                             </div>
                         ` : ''}
@@ -864,15 +984,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="device-buttons">
                         ${isLocal ? '<span class="opt-chip">Host PC</span>' : `
                             ${dev.IsBlocked
-                                ? `<button class="btn-success-action" onclick="window.unblockDeviceById('${devId}')">Unblock</button>`
-                                : `<button class="btn-danger-action" onclick="window.blockDeviceById('${devId}', '${hostname}')">Block</button>`
+                                ? `<button class="btn-success-action" data-action="unblock" data-device-id="${devId}">Unblock</button>`
+                                : `<button class="btn-danger-action" data-action="block" data-device-id="${devId}" data-hostname="${hostname}">Block</button>`
                             }
                             ${(!dev.IsBlocked && !dev.IsApproved)
-                                ? `<button class="btn-neutral-action" onclick="window.approveDeviceById('${devId}', '${hostname}')">Authorize</button>`
+                                ? `<button class="btn-neutral-action" data-action="approve" data-device-id="${devId}" data-hostname="${hostname}">Authorize</button>`
                                 : ''
                             }
                             ${(!dev.IsBlocked && dev.IsApproved)
-                                ? `<button class="btn-neutral-action" onclick="window.revokeDeviceById('${devId}')">Revoke</button>`
+                                ? `<button class="btn-neutral-action" data-action="revoke" data-device-id="${devId}">Revoke</button>`
                                 : ''
                             }
                         `}
@@ -882,23 +1002,42 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
-    // Exposed Global Actions for Inline Handlers
-    window.blockDeviceById = async function(id, hostname) {
-        if (!confirm(`Block device '${hostname || id}' from printing?`)) return;
-        await blockDevice(id, hostname);
-    };
+    // Secure Event Delegation Listeners (Prevents inline XSS)
+    if (activityLogList) {
+        activityLogList.addEventListener('click', async (e) => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const action = btn.getAttribute('data-action');
+            const id = btn.getAttribute('data-device-id');
+            const hostname = btn.getAttribute('data-hostname') || '';
+            if (action === 'block') {
+                if (!confirm(`Block device '${hostname || id}' from printing?`)) return;
+                await blockDevice(id, hostname);
+            } else if (action === 'unblock') {
+                await unblockDevice(id);
+            }
+        });
+    }
 
-    window.unblockDeviceById = async function(id) {
-        await unblockDevice(id);
-    };
-
-    window.approveDeviceById = async function(id, hostname) {
-        await approveDevice(id, hostname);
-    };
-
-    window.revokeDeviceById = async function(id) {
-        await revokeDevice(id);
-    };
+    if (devicesList) {
+        devicesList.addEventListener('click', async (e) => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const action = btn.getAttribute('data-action');
+            const id = btn.getAttribute('data-device-id');
+            const hostname = btn.getAttribute('data-hostname') || '';
+            if (action === 'block') {
+                if (!confirm(`Block device '${hostname || id}' from printing?`)) return;
+                await blockDevice(id, hostname);
+            } else if (action === 'unblock') {
+                await unblockDevice(id);
+            } else if (action === 'approve') {
+                await approveDevice(id, hostname);
+            } else if (action === 'revoke') {
+                await revokeDevice(id);
+            }
+        });
+    }
 
     async function blockDevice(id, hostname) {
         try {
