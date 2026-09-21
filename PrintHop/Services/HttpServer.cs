@@ -885,6 +885,7 @@ namespace PrintHop.Services
         public static List<string> GetAllLocalIpAddresses()
         {
             var ips = new List<string>();
+            var noGatewayIps = new List<string>();
             try
             {
                 foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
@@ -893,17 +894,31 @@ namespace PrintHop.Services
                     if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
 
                     var ipProps = ni.GetIPProperties();
+                    bool hasGateway = ipProps.GatewayAddresses.Count > 0;
+
                     foreach (var addr in ipProps.UnicastAddresses)
                     {
                         if (addr.Address.AddressFamily == AddressFamily.InterNetwork)
                         {
                             string ipStr = addr.Address.ToString();
-                            if (!ipStr.StartsWith("127.") && !ips.Contains(ipStr))
+                            if (!ipStr.StartsWith("127."))
                             {
-                                ips.Add(ipStr);
+                                if (hasGateway)
+                                {
+                                    if (!ips.Contains(ipStr)) ips.Add(ipStr);
+                                }
+                                else
+                                {
+                                    if (!noGatewayIps.Contains(ipStr)) noGatewayIps.Add(ipStr);
+                                }
                             }
                         }
                     }
+                }
+                
+                foreach (var ip in noGatewayIps)
+                {
+                    if (!ips.Contains(ip)) ips.Add(ip);
                 }
             }
             catch { }
