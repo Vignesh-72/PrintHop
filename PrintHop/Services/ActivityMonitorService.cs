@@ -1,0 +1,463 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Web.Script.Serialization;
+using PrintHop.Models;
+
+namespace PrintHop.Services
+{
+    public class ActivityMonitorService
+    {
+        private readonly string _logsPath;
+        private readonly string _devicesPath;
+        private readonly string _legacyWhitelistPath;
+        private readonly JavaScriptSerializer _serializer;
+        private readonly object _lock = new object();
+
+        private readonly List<PrintActivityLog> _logs = new List<PrintActivityLog>();
+        private readonly Dictionary<string, DeviceInfo> _devices = new Dictionary<string, DeviceInfo>(StringComparer.OrdinalIgnoreCase);
+        private readonly LinkedList<string> _dispatchedJobsOrder = new LinkedList<string>();
+        private readonly HashSet<string> _dispatchedJobs = new HashSet<string>();
+
+        private const int MaxLogHistory = 100;
+
+        private Timer _flushTimer;
+        private volatile bool _logsDirty = false;
+        private volatile bool _devicesDirty = false;
+
+        public ActivityMonitorService()
+        {
+            _serializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            _logsPath = Path.Combine(baseDir, "activity_logs.json");
+            _devicesPath = Path.Combine(baseDir, "devices.json");
+            _legacyWhitelistPath = Path.Combine(baseDir, "whitelist.json");
+
+            LoadDevices();
+            LoadLogs();
+
+            _flushTimer = new Timer(FlushDirtyData, null, 3000, 3000);
+        }
+
+        private void FlushDirtyData(object state)
+        {
+            if (_logsDirty)
+            {
+                lock (_lock)
+                {
+                    if (_logsDirty)
+                    {
+                        SaveLogsInternal();
+                        _logsDirty = false;
+                    }
+                }
+            }
+
+            if (_devicesDirty)
+            {
+                lock (_lock)
+                {
+                    if (_devicesDirty)
+                    {
+                        SaveDevicesInternal();
+                        _devicesDirty = false;
+                    }
+                }
+            }
+        }
+
+        public void TrackDispatchedJob(string jobId)
+        {
+            lock (_lock)
+            {
+                if (_dispatchedJobs.Add(jobId))
+                {
+                    _dispatchedJobsOrder.AddLast(jobId);
+                }
+                // Evict oldest entries when cache exceeds limit (FIFO, not bulk clear)
+                while (_dispatchedJobs.Count > 1000 && _dispatchedJobsOrder.Count > 0)
+                {
+                    string oldest = _dispatchedJobsOrder.First.Value;
+                    _dispatchedJobsOrder.RemoveFirst();
+                    _dispatchedJobs.Remove(oldest);
+                }
+            }
+        }
+
+        public bool IsJobDispatchedLocally(string jobId)
+        {
+            lock (_lock)
+            {
+                return _dispatchedJobs.Contains(jobId);
+            }
+        }
+
+        public void LogActivity(PrintActivityLog log)
+        {
+            if (log == null) return;
+
+            lock (_lock)
+            {
+                // Prepend latest entry to front
+                _logs.Insert(0, log);
+                if (_logs.Count > MaxLogHistory)
+                {
+                    _logs.RemoveRange(MaxLogHistory, _logs.Count - MaxLogHistory);
+                }
+
+                // Update device stats
+                if (!string.IsNullOrEmpty(log.SenderId))
+                {
+                    DeviceInfo dev;
+                    if (!_devices.TryGetValue(log.SenderId, out dev))
+                    {
+                        dev = new DeviceInfo
+                        {
+                            Id = log.SenderId,
+                            Hostname = log.SenderHostname ?? "Unknown Device"
+                        };
+                        _devices[log.SenderId] = dev;
+                    }
+
+                    dev.LastSeen = DateTime.Now;
+                    if (!string.IsNullOrEmpty(log.SenderHostname))
+                    {
+                        dev.Hostname = log.SenderHostname;
+                    }
+
+                    if (log.Status == "Success")
+                    {
+                        dev.TotalPrints++;
+                    }
+                }
+
+                _logsDirty = true;
+                _devicesDirty = true;
+            }
+        }
+
+        public List<PrintActivityLog> GetRecentLogs(int limit = 50)
+        {
+            lock (_lock)
+            {
+                return _logs.Take(limit).ToList();
+            }
+        }
+
+        public void ClearLogs()
+        {
+            lock (_lock)
+            {
+                _logs.Clear();
+                SaveLogsInternal();
+                _logsDirty = false;
+            }
+        }
+
+        public List<DeviceInfo> GetDevices()
+        {
+            lock (_lock)
+            {
+                return _devices.Values.OrderByDescending(d => d.LastSeen).ToList();
+            }
+        }
+
+        public bool IsDeviceBlocked(string deviceId)
+        {
+            if (string.IsNullOrEmpty(deviceId)) return false;
+
+            lock (_lock)
+            {
+                DeviceInfo dev;
+                if (_devices.TryGetValue(deviceId, out dev))
+                {
+                    return dev.IsBlocked;
+                }
+                return false;
+            }
+        }
+
+        public bool IsDeviceApproved(string deviceId)
+        {
+            if (string.IsNullOrEmpty(deviceId)) return false;
+
+            lock (_lock)
+            {
+                DeviceInfo dev;
+                if (_devices.TryGetValue(deviceId, out dev))
+                {
+                    return dev.IsApproved && !dev.IsBlocked;
+                }
+                return false;
+            }
+        }
+
+        public void ApproveDevice(string deviceId, string hostname = null)
+        {
+            if (string.IsNullOrEmpty(deviceId)) return;
+
+            lock (_lock)
+            {
+                DeviceInfo dev;
+                if (!_devices.TryGetValue(deviceId, out dev))
+                {
+                    dev = new DeviceInfo { Id = deviceId };
+                    _devices[deviceId] = dev;
+                }
+
+                dev.IsApproved = true;
+                dev.IsBlocked = false;
+                dev.LastSeen = DateTime.Now;
+                if (!string.IsNullOrEmpty(hostname))
+                {
+                    dev.Hostname = hostname;
+                }
+
+                SaveDevicesInternal();
+                _devicesDirty = false;
+            }
+        }
+
+        public void BlockDevice(string deviceId, string hostname = null)
+        {
+            if (string.IsNullOrEmpty(deviceId)) return;
+
+            lock (_lock)
+            {
+                DeviceInfo dev;
+                if (!_devices.TryGetValue(deviceId, out dev))
+                {
+                    dev = new DeviceInfo { Id = deviceId };
+                    _devices[deviceId] = dev;
+                }
+
+                dev.IsBlocked = true;
+                dev.IsApproved = false;
+                dev.LastSeen = DateTime.Now;
+                if (!string.IsNullOrEmpty(hostname))
+                {
+                    dev.Hostname = hostname;
+                }
+
+                SaveDevicesInternal();
+                _devicesDirty = false;
+            }
+        }
+
+        public void UnblockDevice(string deviceId)
+        {
+            if (string.IsNullOrEmpty(deviceId)) return;
+
+            lock (_lock)
+            {
+                DeviceInfo dev;
+                if (_devices.TryGetValue(deviceId, out dev))
+                {
+                    dev.IsBlocked = false;
+                    SaveDevicesInternal();
+                    _devicesDirty = false;
+                }
+            }
+        }
+
+        public void RevokeDevice(string deviceId)
+        {
+            if (string.IsNullOrEmpty(deviceId)) return;
+
+            lock (_lock)
+            {
+                DeviceInfo dev;
+                if (_devices.TryGetValue(deviceId, out dev))
+                {
+                    dev.IsApproved = false;
+                    SaveDevicesInternal();
+                    _devicesDirty = false;
+                }
+            }
+        }
+
+        public void RecordDeviceSeen(string deviceId, string hostname)
+        {
+            if (string.IsNullOrEmpty(deviceId)) return;
+
+            lock (_lock)
+            {
+                DeviceInfo dev;
+                if (!_devices.TryGetValue(deviceId, out dev))
+                {
+                    dev = new DeviceInfo
+                    {
+                        Id = deviceId,
+                        Hostname = hostname ?? "Unknown Device"
+                    };
+                    _devices[deviceId] = dev;
+                }
+                else
+                {
+                    dev.LastSeen = DateTime.Now;
+                    if (!string.IsNullOrEmpty(hostname))
+                    {
+                        dev.Hostname = hostname;
+                    }
+                }
+
+                _devicesDirty = true;
+            }
+        }
+
+        private void LoadDevices()
+        {
+            try
+            {
+                if (File.Exists(_devicesPath))
+                {
+                    string json = File.ReadAllText(_devicesPath);
+                    var list = _serializer.Deserialize<List<DeviceInfo>>(json);
+                    if (list != null)
+                    {
+                        foreach (var d in list)
+                        {
+                            if (!string.IsNullOrEmpty(d.Id))
+                            {
+                                _devices[d.Id] = d;
+                            }
+                        }
+                    }
+                }
+
+                // Seamless migration from legacy whitelist.json
+                if (File.Exists(_legacyWhitelistPath))
+                {
+                    string wJson = File.ReadAllText(_legacyWhitelistPath);
+                    var wList = _serializer.Deserialize<List<string>>(wJson);
+                    if (wList != null)
+                    {
+                        foreach (var id in wList)
+                        {
+                            if (!string.IsNullOrEmpty(id) && !_devices.ContainsKey(id))
+                            {
+                                _devices[id] = new DeviceInfo
+                                {
+                                    Id = id,
+                                    Hostname = "Authorized Device",
+                                    IsApproved = true
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void SaveDevices()
+        {
+            _devicesDirty = true;
+        }
+
+        private void SaveDevicesInternal()
+        {
+            try
+            {
+                var list = _devices.Values.ToList();
+                string json = _serializer.Serialize(list);
+                AtomicWrite(_devicesPath, json);
+
+                // Keep legacy whitelist.json in sync for backward compatibility
+                var approvedIds = _devices.Values
+                    .Where(d => d.IsApproved && !d.IsBlocked)
+                    .Select(d => d.Id)
+                    .ToList();
+                string wJson = _serializer.Serialize(approvedIds);
+                AtomicWrite(_legacyWhitelistPath, wJson);
+            }
+            catch { }
+        }
+
+        private void LoadLogs()
+        {
+            try
+            {
+                if (File.Exists(_logsPath))
+                {
+                    string json = File.ReadAllText(_logsPath);
+                    var list = _serializer.Deserialize<List<PrintActivityLog>>(json);
+                    if (list != null)
+                    {
+                        _logs.AddRange(list);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void SaveLogs()
+        {
+            _logsDirty = true;
+        }
+
+        private void SaveLogsInternal()
+        {
+            try
+            {
+                string json = _serializer.Serialize(_logs);
+                AtomicWrite(_logsPath, json);
+            }
+            catch { }
+        }
+
+        private void AtomicWrite(string filePath, string content)
+        {
+            try
+            {
+                string temp = filePath + ".tmp";
+                string bak = filePath + ".bak";
+                File.WriteAllText(temp, content);
+                if (File.Exists(filePath))
+                {
+                    // Delete stale .bak first to avoid locking issues (e.g., antivirus holding it)
+                    try { if (File.Exists(bak)) File.Delete(bak); } catch { }
+                    File.Replace(temp, filePath, bak);
+                }
+                else
+                {
+                    File.Move(temp, filePath);
+                }
+            }
+            catch
+            {
+                try { File.WriteAllText(filePath, content); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// Cleans up orphaned print job temp files in %TEMP%\PrintHop that are older than 1 hour.
+        /// Called on startup to reclaim disk space after crashes or unclean shutdowns.
+        /// </summary>
+        public static void CleanupOrphanedTempFiles()
+        {
+            try
+            {
+                string tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "PrintHop");
+                if (!Directory.Exists(tempDir)) return;
+
+                var threshold = DateTime.Now.AddHours(-1);
+                foreach (var file in Directory.GetFiles(tempDir, "job_*"))
+                {
+                    try
+                    {
+                        var fi = new System.IO.FileInfo(file);
+                        if (fi.LastWriteTime < threshold)
+                        {
+                            fi.Delete();
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+    }
+}
