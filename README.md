@@ -1,5 +1,5 @@
 <div align="center">
-  <img width="192" height="192" alt="logo_transparent_192x192" src="https://github.com/user-attachments/assets/024a5b5c-1f6b-423f-a3d0-8aacd8ecd56f" />
+  <img width="224" height="224" alt="WhatsApp Image 2026-09-20 at 1 03 32 PM(2)" src="https://github.com/user-attachments/assets/2f56adeb-b302-4834-850d-99782d793e10" />
   <h1>PrintHop</h1>
   <p><b>Driverless, Zero-Cloud Printer-Sharing for Windows LANs</b></p>
   
