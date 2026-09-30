@@ -17,7 +17,7 @@ namespace PrintHop.Services
     public class HttpServer : IDisposable
     {
         private HttpListener _listener;
-        private readonly UdpDiscovery _discovery;
+        private UdpDiscovery _discovery;
         private readonly IPrintService _printService;
         private readonly JavaScriptSerializer _jsonSerializer;
         private readonly string _localId;
@@ -39,6 +39,16 @@ namespace PrintHop.Services
             _printJobManager = printJobManager;
             _jsonSerializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         }
+
+        /// <summary>
+        /// Replaces the UdpDiscovery instance this server uses for /api/peers and /api/network-diagnostics.
+        /// Called by TrayAppContext after recreating UdpDiscovery with the correct HTTP port.
+        /// </summary>
+        public void UpdateDiscovery(UdpDiscovery newDiscovery)
+        {
+            _discovery = newDiscovery;
+        }
+
 
         public int Start()
         {
@@ -176,7 +186,7 @@ namespace PrintHop.Services
                     res.Headers.Add("Access-Control-Allow-Origin", string.Format("http://localhost:{0}", _port));
                 }
                 res.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-                res.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Origin, Accept");
+                res.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Origin, Accept, X-PrintHop-SenderId, X-PrintHop-SenderHostname, X-PrintHop-PrinterName, X-PrintHop-OriginalFilename, X-PrintHop-SenderHttpPort, X-PrintHop-Copies, X-PrintHop-PaperSize, X-PrintHop-Orientation, X-PrintHop-ColorMode, X-PrintHop-Duplex, X-PrintHop-PageRange");
 
                 if (req.HttpMethod == "OPTIONS")
                 {
@@ -525,6 +535,15 @@ namespace PrintHop.Services
                     try { System.Windows.Forms.Application.Exit(); } catch { }
                     Environment.Exit(0);
                 });
+            }
+            else if (req.HttpMethod == "GET" && path == "/api/network-diagnostics")
+            {
+                var diagnostics = _discovery.GetDiagnosticSummary();
+                SendJson(res, diagnostics);
+            }
+            else if (req.HttpMethod == "POST" && path == "/api/receive-print")
+            {
+                HandleReceivePrint(context);
             }
             else
             {

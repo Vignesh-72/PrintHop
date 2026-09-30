@@ -304,6 +304,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    const filterVirtualPrinters = document.getElementById('filter-virtual-printers');
+    if (filterVirtualPrinters) {
+        filterVirtualPrinters.addEventListener('change', () => {
+            const allPeers = selfInfo ? [selfInfo, ...peers] : peers;
+            renderPrinters(allPeers);
+        });
+    }
+
     // =========================================================================
     // Printer Separation: Local System Printers vs Network Printers
     // =========================================================================
@@ -341,6 +349,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const isSelf = (peerId === selfId) || (selfInfo && (peer.ip === selfInfo.ip || peer.Ip === selfInfo.ip));
 
             peerPrinters.forEach(printer => {
+                // Check virtual printer filter
+                const isVirtual = /pdf|onenote|xps|fax/i.test(printer);
+                if (filterVirtualPrinters && filterVirtualPrinters.checked && isVirtual) return;
+
                 const isSelected = selectedPrinter &&
                                    (selectedPrinter.peer.id || selectedPrinter.peer.Id) === peerId &&
                                    selectedPrinter.printerName === printer;
@@ -769,14 +781,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            activityLogs = newLogs;
-            if (activityLogs && activityLogs.length > 0) {
-                lastSeenLogDate = parseNetDate(activityLogs[0].Timestamp).getTime();
+            const newSignature = JSON.stringify(newLogs);
+            if (newSignature !== window.lastActivityLogsSignature) {
+                window.lastActivityLogsSignature = newSignature;
+                activityLogs = newLogs;
+                if (activityLogs && activityLogs.length > 0) {
+                    lastSeenLogDate = parseNetDate(activityLogs[0].Timestamp).getTime();
+                }
+                renderActivityLogs();
+                updateStats();
             }
             initialLoad = false;
-            
-            renderActivityLogs();
-            updateStats();
         } catch (e) {
             console.error('Failed to fetch activity logs:', e);
         }
@@ -786,9 +801,14 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/devices');
             if (!res.ok) return;
-            devices = await res.json();
-            renderDevices();
-            updateStats();
+            const newDevices = await res.json();
+            const newSignature = JSON.stringify(newDevices);
+            if (newSignature !== window.lastDevicesSignature) {
+                window.lastDevicesSignature = newSignature;
+                devices = newDevices;
+                renderDevices();
+                updateStats();
+            }
         } catch (e) {
             console.error('Failed to fetch devices:', e);
         }
@@ -800,8 +820,13 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/jobs');
             if (!res.ok) return;
-            printQueue = await res.json();
-            renderPrintQueue();
+            const newQueue = await res.json();
+            const newSignature = JSON.stringify(newQueue);
+            if (newSignature !== window.lastPrintQueueSignature) {
+                window.lastPrintQueueSignature = newSignature;
+                printQueue = newQueue;
+                renderPrintQueue();
+            }
         } catch (e) {
             console.error('Failed to fetch print queue:', e);
         }
@@ -1275,6 +1300,145 @@ document.addEventListener('DOMContentLoaded', () => {
         searchLogsInput.addEventListener('input', () => {
             renderActivityLogs();
         });
+    }
+
+    // =========================================================================
+    // Network Diagnostics Panel
+    // =========================================================================
+    const diagConsole = document.getElementById('diag-console');
+    const diagAutoScroll = document.getElementById('diag-autoscroll');
+    const refreshDiagBtn = document.getElementById('refresh-diag-btn');
+    let lastDiagLogCount = 0;
+    let diagPollingInterval = null;
+
+    // Handle diagnostics tab activation — start/stop polling
+    navTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const targetViewId = tab.getAttribute('data-view');
+            if (targetViewId === 'diagnostics-view') {
+                fetchNetworkDiagnostics();
+                // Start polling every 3s when tab is active
+                if (!diagPollingInterval) {
+                    diagPollingInterval = setInterval(fetchNetworkDiagnostics, 3000);
+                }
+            } else {
+                // Stop polling when leaving the diagnostics tab
+                if (diagPollingInterval) {
+                    clearInterval(diagPollingInterval);
+                    diagPollingInterval = null;
+                }
+            }
+        });
+    });
+
+    if (refreshDiagBtn) {
+        refreshDiagBtn.addEventListener('click', () => {
+            fetchNetworkDiagnostics();
+            showToast('Diagnostics refreshed', 'success');
+        });
+    }
+
+    async function fetchNetworkDiagnostics() {
+        try {
+            const res = await fetch('/api/network-diagnostics');
+            if (!res.ok) return;
+            const data = await res.json();
+            renderDiagnostics(data);
+        } catch (err) {
+            console.error('Failed to fetch diagnostics:', err);
+        }
+    }
+
+    function renderDiagnostics(data) {
+        // Update metric counters
+        const bsSent = document.getElementById('diag-broadcasts-sent');
+        const pktsRecv = document.getElementById('diag-packets-received');
+        const errCount = document.getElementById('diag-errors');
+        if (bsSent) bsSent.textContent = data.totalBroadcastsSent || 0;
+        if (pktsRecv) pktsRecv.textContent = data.totalPacketsReceived || 0;
+        if (errCount) errCount.textContent = data.totalErrors || 0;
+
+        // Update node info
+        const setEl = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = val || '--';
+        };
+        setEl('diag-hostname', data.localHostname);
+        setEl('diag-local-ip', data.localIp);
+        setEl('diag-http-port', data.httpPort);
+        setEl('diag-udp-port', data.udpPort);
+        setEl('diag-multicast', data.multicastGroup);
+        setEl('diag-active-peers', data.activePeers);
+        setEl('diag-node-id', data.localId);
+
+        const targets = data.broadcastTargets || [];
+        setEl('diag-broadcast-targets', targets.length > 0 ? targets.join('  |  ') : 'None');
+
+        // Render network interfaces
+        renderDiagInterfaces(data.networkInterfaces || []);
+
+        // Render log console
+        renderDiagLogs(data.logs || []);
+    }
+
+    function renderDiagInterfaces(interfaces) {
+        const container = document.getElementById('diag-interfaces');
+        if (!container) return;
+
+        if (!interfaces || interfaces.length === 0) {
+            container.innerHTML = '<div class="empty-notice">No network interfaces detected.</div>';
+            return;
+        }
+
+        container.innerHTML = interfaces.map(iface => {
+            const statusClass = iface.Status === 'Up' ? 'up' : 'down';
+            const ips = (iface.IPv4Addresses || []).join(', ') || 'None';
+            const masks = (iface.SubnetMasks || []).join(', ') || 'N/A';
+            const gateways = (iface.Gateways || []).filter(g => g && g !== '0.0.0.0').join(', ') || 'None';
+            const mac = iface.MacAddress ? iface.MacAddress.match(/.{1,2}/g).join(':') : 'N/A';
+
+            return `<div class="diag-iface-card">
+                <div class="diag-iface-header">
+                    <span class="diag-iface-name">${escapeHtml(iface.Name)}</span>
+                    <span class="diag-iface-badge ${statusClass}">${escapeHtml(iface.Status)}</span>
+                    <span class="diag-iface-badge type-badge">${escapeHtml(iface.Type)}</span>
+                    ${iface.SupportsMulticast ? '<span class="diag-iface-badge up">Multicast</span>' : ''}
+                </div>
+                <div class="diag-iface-details">
+                    <span><strong>IP:</strong> ${escapeHtml(ips)}</span>
+                    <span><strong>Mask:</strong> ${escapeHtml(masks)}</span>
+                    <span><strong>Gateway:</strong> ${escapeHtml(gateways)}</span>
+                    <span><strong>MAC:</strong> ${escapeHtml(mac)}</span>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function renderDiagLogs(logs) {
+        if (!diagConsole) return;
+
+        // Only re-render if log count changed (avoid flickering)
+        if (logs.length === lastDiagLogCount && logs.length > 0) return;
+        lastDiagLogCount = logs.length;
+
+        if (!logs || logs.length === 0) {
+            diagConsole.innerHTML = '<div class="empty-notice">Waiting for events...</div>';
+            return;
+        }
+
+        diagConsole.innerHTML = logs.map(log => {
+            const levelClass = 'level-' + (log.Level || 'info').toLowerCase();
+            return `<div class="diag-log-line">
+                <span class="diag-log-ts">${escapeHtml(log.Timestamp)}</span>
+                <span class="diag-log-level ${levelClass}">${escapeHtml(log.Level)}</span>
+                <span class="diag-log-msg">${escapeHtml(log.Message)}</span>
+            </div>`;
+        }).join('');
+
+        // Auto-scroll to bottom
+        if (diagAutoScroll && diagAutoScroll.checked) {
+            diagConsole.scrollTop = diagConsole.scrollHeight;
+        }
     }
 
     // Start App

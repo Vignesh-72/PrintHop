@@ -64,6 +64,12 @@
                 <span>Activity &amp; Devices</span>
                 <span class="nav-count hidden" id="activity-badge">0</span>
             </button>
+            <button class="nav-item" id="tab-diagnostics" data-view="diagnostics-view">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                </svg>
+                <span>Network Diagnostics</span>
+            </button>
         </div>
     </nav>
 
@@ -77,6 +83,12 @@
                 <div class="section-heading">
                     <div class="heading-text">
                         <h2>Select Destination Printer</h2>
+                    </div>
+                    <div class="heading-actions">
+                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer;">
+                            <input type="checkbox" id="filter-virtual-printers" checked>
+                            <span>Hide Virtual Printers</span>
+                        </label>
                     </div>
                 </div>
 
@@ -410,6 +422,133 @@
 
                 <div id="devices-list" class="device-feed">
                     <div class="empty-notice">Loading recognized devices...</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ==============================================
+             View 3: Network Diagnostics
+             ============================================== -->
+        <div id="diagnostics-view" class="view-panel hidden">
+            <!-- Summary Cards -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-value" id="diag-broadcasts-sent">0</span>
+                        <span class="metric-label">Broadcasts Sent</span>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-value" id="diag-packets-received">0</span>
+                        <span class="metric-label">Packets Received</span>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon metric-icon-danger">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                        </svg>
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-value" id="diag-errors">0</span>
+                        <span class="metric-label">Errors</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Node Identity -->
+            <section class="card-section">
+                <div class="section-heading">
+                    <div class="heading-text">
+                        <h2>This Node</h2>
+                    </div>
+                    <div class="filter-actions">
+                        <button id="refresh-diag-btn" class="btn-secondary-sm" title="Refresh diagnostics">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="diag-info-grid" id="diag-node-info">
+                    <div class="diag-info-item">
+                        <span class="diag-label">Hostname</span>
+                        <span class="diag-value" id="diag-hostname">--</span>
+                    </div>
+                    <div class="diag-info-item">
+                        <span class="diag-label">Local IP</span>
+                        <span class="diag-value" id="diag-local-ip">--</span>
+                    </div>
+                    <div class="diag-info-item">
+                        <span class="diag-label">HTTP Port</span>
+                        <span class="diag-value" id="diag-http-port">--</span>
+                    </div>
+                    <div class="diag-info-item">
+                        <span class="diag-label">UDP Port</span>
+                        <span class="diag-value" id="diag-udp-port">--</span>
+                    </div>
+                    <div class="diag-info-item">
+                        <span class="diag-label">Multicast Group</span>
+                        <span class="diag-value" id="diag-multicast">--</span>
+                    </div>
+                    <div class="diag-info-item">
+                        <span class="diag-label">Active Peers</span>
+                        <span class="diag-value" id="diag-active-peers">0</span>
+                    </div>
+                    <div class="diag-info-item diag-info-wide">
+                        <span class="diag-label">Broadcast Targets</span>
+                        <span class="diag-value" id="diag-broadcast-targets">--</span>
+                    </div>
+                    <div class="diag-info-item diag-info-wide">
+                        <span class="diag-label">Node ID</span>
+                        <span class="diag-value diag-value-mono" id="diag-node-id">--</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Network Interfaces -->
+            <section class="card-section">
+                <div class="section-heading">
+                    <div class="heading-text">
+                        <h2>Network Interfaces</h2>
+                    </div>
+                </div>
+                <div id="diag-interfaces" class="diag-interfaces-list">
+                    <div class="empty-notice">Loading...</div>
+                </div>
+            </section>
+
+            <!-- Live Log Console -->
+            <section class="card-section">
+                <div class="section-heading">
+                    <div class="heading-text">
+                        <h2>Discovery Event Log</h2>
+                    </div>
+                    <div class="filter-actions">
+                        <label class="diag-auto-scroll">
+                            <input type="checkbox" id="diag-autoscroll" checked>
+                            <span>Auto-scroll</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="diag-console" id="diag-console">
+                    <div class="empty-notice">Waiting for events...</div>
                 </div>
             </section>
         </div>

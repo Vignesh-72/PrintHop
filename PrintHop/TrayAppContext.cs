@@ -93,16 +93,18 @@ namespace PrintHop
             // 1. Ensure Windows Firewall and URL ACL reservations are configured first
             FirewallService.EnsureFirewallConfigured();
 
-            // 2. Start HTTP server
-            _udpDiscovery = new UdpDiscovery(_localId, 4222, _printService); // HTTP port passed, will update later if it changes
+            // 2. Start HTTP server (with a temporary UdpDiscovery to satisfy the constructor)
+            _udpDiscovery = new UdpDiscovery(_localId, 4222, _printService);
             var printJobManager = new PrintJobManager(_printService, _activityMonitor);
             _httpServer = new HttpServer(_localId, _udpDiscovery, _printService, WhitelistCheck, _activityMonitor, printJobManager);
             _httpPort = _httpServer.Start();
 
-            // 3. If the port changed from 4222 because it was taken, restart discovery with the correct port
+            // 3. Recreate UdpDiscovery with the actual bound port, then update HttpServer's reference
+            //    so that /api/peers and /api/network-diagnostics query the live instance
             _udpDiscovery.Dispose();
             _udpDiscovery = new UdpDiscovery(_localId, _httpPort, _printService);
             _udpDiscovery.Start();
+            _httpServer.UpdateDiscovery(_udpDiscovery);
         }
 
         private bool WhitelistCheck(string senderId, string senderHostname)
@@ -188,6 +190,7 @@ namespace PrintHop
             try
             {
                 var dr = MessageBox.Show(
+                    new Form { TopMost = true },
                     string.Format("Incoming print job from '{0}' (ID: {1}).\n\nDo you want to accept this and future print jobs from this device?", senderHostname, senderId), 
                     "PrintHop - New Device", 
                     MessageBoxButtons.YesNo, 
